@@ -1,6 +1,6 @@
 export type QuestionType = 'mcq' | 'subjective' | 'fillblank' | 'truefalse' | 'match';
 export type Difficulty = 'easy' | 'medium' | 'hard';
-export type PaperSection = 'A' | 'B' | 'C' | 'D';
+export type PaperSection = string;
 
 export interface User {
   id: string;
@@ -83,7 +83,8 @@ export interface PaperQuestion {
   id: string;
   paperId: string;
   questionId: string;
-  section: PaperSection;
+  section: string;
+  parentId?: string;
   marks: number;
   orderIndex: number;
   createdAt: number;

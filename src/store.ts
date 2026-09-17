@@ -50,7 +50,7 @@ interface AppState {
   updatePaperQuestion: (id: string, updates: Partial<PaperQuestion>) => Promise<void>;
   removeQuestionFromPaper: (paperId: string, questionId: string) => Promise<void>;
   reorderPaperQuestions: (paperId: string, paperQuestionsList: PaperQuestion[]) => Promise<void>;
-  createAndAddQuestion: (paperId: string, content: string, questionType: QuestionType, options?: string[], section?: PaperSection, marks?: number, courseId?: string, subjectId?: string, classId?: string, difficulty?: Difficulty, explanation?: string, imageUrl?: string, typeHeader?: string) => Promise<string>;
+  createAndAddQuestion: (paperId: string, content: string, questionType: QuestionType, options?: string[], section?: string, parentId?: string, marks?: number, courseId?: string, subjectId?: string, classId?: string, difficulty?: Difficulty, explanation?: string, imageUrl?: string, typeHeader?: string) => Promise<string>;
 }
 
 const generateId = () => crypto.randomUUID();
@@ -238,6 +238,7 @@ export const useStore = create<AppState>()((set, get) => ({
             paperId: pq.paper_id,
             questionId: pq.question_id,
             section: pq.section,
+            parentId: pq.parent_id,
             marks: pq.marks,
             orderIndex: pq.order_index,
             createdAt: new Date(pq.created_at).getTime(),
@@ -605,6 +606,7 @@ export const useStore = create<AppState>()((set, get) => ({
           paper_id: paperId,
           question_id: questionId,
           section,
+          parent_id: undefined, // Or pass parentId to addQuestionToPaper if needed
           marks,
           order_index: orderIndex,
         });
@@ -638,6 +640,7 @@ export const useStore = create<AppState>()((set, get) => ({
           updated_at: new Date().toISOString(),
         };
         if (updates.section !== undefined) supabaseUpdates.section = updates.section;
+        if (updates.parentId !== undefined) supabaseUpdates.parent_id = updates.parentId;
         if (updates.marks !== undefined) supabaseUpdates.marks = updates.marks;
         if (updates.orderIndex !== undefined) supabaseUpdates.order_index = updates.orderIndex;
 
@@ -648,7 +651,23 @@ export const useStore = create<AppState>()((set, get) => ({
         set((state) => {
           const newPaperQuestions = new Map(state.paperQuestions);
           const pqs = newPaperQuestions.get(paperId) || [];
-          newPaperQuestions.set(paperId, pqs.filter(pq => pq.questionId !== questionId));
+          
+          const pqToRemove = pqs.find(pq => pq.questionId === questionId);
+          if (!pqToRemove) return state;
+
+          const idsToRemove = new Set<string>([pqToRemove.id]);
+          let added = true;
+          while (added) {
+            added = false;
+            for (const pq of pqs) {
+              if (pq.parentId && idsToRemove.has(pq.parentId) && !idsToRemove.has(pq.id)) {
+                idsToRemove.add(pq.id);
+                added = true;
+              }
+            }
+          }
+
+          newPaperQuestions.set(paperId, pqs.filter(pq => !idsToRemove.has(pq.id)));
           return { paperQuestions: newPaperQuestions };
         });
 
@@ -673,7 +692,7 @@ export const useStore = create<AppState>()((set, get) => ({
         await supabase.from('paper_questions').upsert(updates);
       },
 
-      createAndAddQuestion: async (paperId: string, content: string, questionType: QuestionType, options?: string[], section?: PaperSection, marks?: number, courseId?: string, subjectId?: string, classId?: string, difficulty?: Difficulty, explanation?: string, imageUrl?: string, typeHeader?: string) => {
+      createAndAddQuestion: async (paperId: string, content: string, questionType: QuestionType, options?: string[], section?: string, parentId?: string, marks?: number, courseId?: string, subjectId?: string, classId?: string, difficulty?: Difficulty, explanation?: string, imageUrl?: string, typeHeader?: string) => {
         const { user, questionPapers } = get();
         if (!user?.id) return '';
 
@@ -706,6 +725,7 @@ export const useStore = create<AppState>()((set, get) => ({
           paperId,
           questionId,
           section: section || 'A',
+          parentId,
           marks: marks || 1,
           orderIndex,
           createdAt: Date.now(),
@@ -745,6 +765,7 @@ export const useStore = create<AppState>()((set, get) => ({
           paper_id: paperId,
           question_id: questionId,
           section: section || 'A',
+          parent_id: parentId,
           marks: marks || 1,
           order_index: orderIndex,
         });

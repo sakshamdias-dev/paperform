@@ -98,10 +98,14 @@ import {
   X,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
   GitFork,
+  Layers,
+  FolderPlus,
 } from 'lucide-react';
 import { useStore } from '../store';
 import type { Question, PaperQuestion, QuestionType, PaperSection, Difficulty } from '../types';
+import React from 'react';
 
 const BLOCK_TYPES: { type: QuestionType; label: string; icon: typeof AlignLeft; description: string; header: string }[] = [
   { type: 'mcq', label: 'Multiple Choice', icon: ListChecks, description: 'Question with options A-D', header: 'Multiple Choice:' },
@@ -113,6 +117,12 @@ function stripHtml(html: string): string {
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
   return tmp.textContent || tmp.innerText || '';
+}
+
+interface SubQuestionNode {
+  pq: PaperQuestion;
+  question: Question;
+  children: SubQuestionNode[];
 }
 
 interface SortableQuestionProps {
@@ -137,6 +147,12 @@ interface SortableQuestionProps {
   onMoveSectionDown?: (section: string) => void;
   onAddQuestionToSection?: (section: string) => void;
   showTypeHeader?: string;
+  subQuestions?: SubQuestionNode[];
+  onEditSubQuestion?: (pqId: string) => void;
+  onRemoveSubQuestion?: (pqId: string, qId: string) => void;
+  onMoveSubQuestionUp?: (pqId: string) => void;
+  onMoveSubQuestionDown?: (pqId: string) => void;
+  onAddSubSubQuestion?: (pq: PaperQuestion) => void;
 }
 
 function getMcqLayout(options: string[]): string {
@@ -176,7 +192,13 @@ function SortableQuestion({
   onMoveSectionUp,
   onMoveSectionDown,
   onAddQuestionToSection,
-  showTypeHeader
+  showTypeHeader,
+  subQuestions,
+  onEditSubQuestion,
+  onRemoveSubQuestion,
+  onMoveSubQuestionUp,
+  onMoveSubQuestionDown,
+  onAddSubSubQuestion
 }: SortableQuestionProps) {
   const {
     attributes,
@@ -205,18 +227,8 @@ function SortableQuestion({
       {/* Section Divider Header */}
       {showSectionHeader && (
         <div className="section-divider">
-          <span>Section {showSectionHeader}</span>
+          <span>{showSectionHeader}</span>
           <div className="section-admin-actions">
-            {onAddQuestionToSection && (
-              <button
-                className="section-add-btn"
-                onClick={(e) => { e.stopPropagation(); onAddQuestionToSection(showSectionHeader); }}
-                title={`Add Question to Section ${showSectionHeader}`}
-              >
-                <Plus size={13} />
-                <span>Add Question</span>
-              </button>
-            )}
             {onMoveSectionUp && (
               <button
                 className="section-action-icon-btn"
@@ -243,11 +255,6 @@ function SortableQuestion({
 
       {/* Clean HTML - Question Content & Options with Inline Actions */}
       <div className="clean-question">
-        {showTypeHeader && (
-          <div className="type-header">
-            <span>{showTypeHeader}</span>
-          </div>
-        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, position: 'relative' }}>
           <div className="q-drag-handle" {...attributes} {...listeners} title="Drag to reorder">
             <GripVertical size={14} />
@@ -268,12 +275,7 @@ function SortableQuestion({
                   ))}
                 </div>
               )}
-              {question.questionType === 'truefalse' && (
-                <div className="q-options q-options-horizontal">
-                  <span className="q-option">(a) True</span>
-                  <span className="q-option">(b) False</span>
-                </div>
-              )}
+
             </div>
           </div>
 
@@ -330,6 +332,81 @@ function SortableQuestion({
             </div>
           </div>
         </div>
+
+        {/* Flattened sub-questions for proper right-alignment */}
+        {subQuestions && subQuestions.length > 0 && (
+          <div className="sub-questions" style={{ marginTop: 12 }}>
+            {subQuestions.map((sub, si) => {
+              const renderSubQ = (node: SubQuestionNode, depth: number, idx: number, numSiblings: number): React.ReactNode => {
+                let label = `(${String.fromCharCode(97 + idx)})`;
+                if (depth === 1) label = `(${['i', 'ii', 'iii', 'iv', 'v'][idx] || String(idx + 1)})`;
+                if (depth >= 2) label = `•`;
+                const subMcqLayout = node.question.questionType === 'mcq' ? getMcqLayout(node.question.options || []) : 'vertical';
+
+                const canMoveUp = idx > 0;
+                const canMoveDown = idx < numSiblings - 1;
+
+                return (
+                  <React.Fragment key={node.pq.id}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, position: 'relative', marginTop: 10 }}>
+                      <div style={{ width: 14, flexShrink: 0 }} />
+                      <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, minWidth: 0, marginLeft: depth * 28 }}>
+                        <span className="q-number" style={{ fontSize: '0.85em', minWidth: 24 }}>{label}</span>
+                        <div className="q-content-wrapper" style={{ flex: 1, minWidth: 0 }}>
+                          <div className="q-text" dangerouslySetInnerHTML={{ __html: node.question.content }} />
+                          {node.question.questionType === 'mcq' && node.question.options && node.question.options.length > 0 && (
+                            <div className={`q-options q-options-${subMcqLayout}`}>
+                              {node.question.options.map((opt, oi) => (
+                                <span key={oi} className="q-option" style={{ display: 'inline-flex', alignItems: 'flex-start' }}>
+                                  <span style={{ marginRight: '4px' }}>{String.fromCharCode(65 + oi)}.</span>
+                                  <span dangerouslySetInnerHTML={{ __html: opt }} />
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 16 }}>
+                        <span className="marks-inline" style={{ fontSize: '0.85em' }}>{node.pq.marks}m</span>
+                        <div className="question-card-actions">
+                          {onAddSubSubQuestion && (
+                            <button className="q-subquestion-btn" onClick={(e) => { e.stopPropagation(); onAddSubSubQuestion(node.pq); }} title="Add Subquestion">
+                              <GitFork size={13} style={{ transform: 'rotate(90deg)' }} />
+                              <span>Subquestion</span>
+                            </button>
+                          )}
+                          {onMoveSubQuestionUp && (
+                            <button className="q-action-icon-btn" onClick={(e) => { e.stopPropagation(); onMoveSubQuestionUp(node.pq.id); }} disabled={!canMoveUp} title="Move Question Up">
+                              <ChevronUp size={14} />
+                            </button>
+                          )}
+                          {onMoveSubQuestionDown && (
+                            <button className="q-action-icon-btn" onClick={(e) => { e.stopPropagation(); onMoveSubQuestionDown(node.pq.id); }} disabled={!canMoveDown} title="Move Question Down">
+                              <ChevronDown size={14} />
+                            </button>
+                          )}
+                          {onEditSubQuestion && (
+                            <button className="q-action-icon-btn" onClick={(e) => { e.stopPropagation(); onEditSubQuestion(node.pq.id); }} title="Edit Subquestion">
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                          {onRemoveSubQuestion && (
+                            <button className="q-action-icon-btn danger" onClick={(e) => { e.stopPropagation(); onRemoveSubQuestion(node.pq.id, node.question.id); }} title="Delete Subquestion">
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {node.children && node.children.length > 0 && node.children.map((child, ci) => renderSubQ(child, depth + 1, ci, node.children.length))}
+                  </React.Fragment>
+                );
+              };
+              return renderSubQ(sub, 0, si, subQuestions.length);
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -511,6 +588,14 @@ export default function Editor() {
   const [draftTypeHeader, setDraftTypeHeader] = useState('');
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
 
+  const [isConstructorOpen, setIsConstructorOpen] = useState(false);
+  const [activeView, setActiveView] = useState<'tree' | 'add-section' | 'add-question'>('tree');
+  const [newSectionTitle, setNewSectionTitle] = useState('');
+  const [qParentId, setQParentId] = useState<string>('');
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
+
+
+
   const [showMathDialog, setShowMathDialog] = useState(false);
   const [showCreatorHub, setShowCreatorHub] = useState(false);
   const [showPaperSettings, setShowPaperSettings] = useState(false);
@@ -575,6 +660,56 @@ export default function Editor() {
   const paperQuestionsList = useMemo(() => {
     return paperQuestions.get(id || '') || [];
   }, [paperQuestions, id]);
+
+  // Tree building logic
+  const sections = useMemo(() => {
+    const secMap = new Map<string, any>();
+    const pqMap = new Map<string, any>();
+
+    paperQuestionsList.forEach(pq => {
+      const q = questions.find(x => x.id === pq.questionId);
+      pqMap.set(pq.id, { ...pq, text: q?.content, type: q?.questionType, options: q?.options, children: [] });
+    });
+
+    paperQuestionsList.forEach(pq => {
+      const node = pqMap.get(pq.id);
+      if (pq.parentId) {
+        if (pqMap.has(pq.parentId)) {
+          pqMap.get(pq.parentId).children.push(node);
+        }
+      } else {
+        if (!secMap.has(pq.section)) {
+          secMap.set(pq.section, { id: pq.section, title: pq.section, questions: [] });
+        }
+        secMap.get(pq.section).questions.push(node);
+      }
+    });
+
+    return Array.from(secMap.values());
+  }, [paperQuestionsList, questions]);
+
+  const totalQuestionsCount = paperQuestionsList.length;
+
+  const getAllQuestionsFlat = (qs: any[], depth = 0): any[] => {
+    let result: any[] = [];
+    qs.forEach((q) => {
+      const prefix = '— '.repeat(depth);
+      const text = q.text ? q.text.replace(/<[^>]*>?/gm, '').substring(0, 45) : 'Empty';
+      result.push({ id: q.id, label: `${prefix} ${text}...` });
+      if (q.children && q.children.length > 0) {
+        result = result.concat(getAllQuestionsFlat(q.children, depth + 1));
+      }
+    });
+    return result;
+  };
+
+  const selectedSectionObj = sections.find(s => s.id === draftSection);
+  const parentCandidates = selectedSectionObj ? getAllQuestionsFlat(selectedSectionObj.questions) : [];
+
+  const toggleExpand = (id: string) => {
+    setExpandedNodes(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
 
   // Render MathJax formulas in the paper preview and property panel
   useEffect(() => {
@@ -680,22 +815,17 @@ export default function Editor() {
   };
 
   const handleAddQuestionToSection = (section: string) => {
-    setDraftSection((section as PaperSection) || 'A');
-    setShowCreatorHub(true);
+    setDraftSection(section);
+    setIsConstructorOpen(true);
+    setActiveView('tree');
   };
 
   const handleAddSubQuestion = (parentPQ: PaperQuestion) => {
-    const parentQ = getQuestion(parentPQ.questionId);
-    setSelectedPQId(null);
-    setDraftType(parentQ?.questionType || 'mcq');
-    setDraftContent('');
-    setDraftOptions(parentQ?.questionType === 'mcq' ? ['', '', '', ''] : []);
     setDraftSection(parentPQ.section);
-    setDraftMarks(parentPQ.marks || 1);
-    setDraftDifficulty(parentQ?.difficulty || 'medium');
-    setDraftTypeHeader('');
-    setEditingQuestionId(null);
-    setShowCreatorHub(false);
+    setQParentId(parentPQ.id);
+    setIsConstructorOpen(true);
+    setActiveView('add-question');
+    setDraftType('subjective');
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -739,6 +869,7 @@ export default function Editor() {
         draftType,
         options.length > 0 ? options : undefined,
         draftSection,
+        qParentId || undefined,
         draftMarks,
         undefined,
         paper?.subjectId,
@@ -754,6 +885,7 @@ export default function Editor() {
         setDraftContent('');
         setDraftOptions(['', '', '', '']);
         setEditingQuestionId(null);
+        setActiveView('tree');
       } else {
         showToastMessage('Failed to add question. Check console.');
       }
@@ -800,6 +932,7 @@ export default function Editor() {
       setDraftType(null);
       setDraftContent('');
       setDraftOptions(['', '', '', '']);
+      setActiveView('tree');
     } finally {
       setSaving(false);
     }
@@ -893,6 +1026,7 @@ export default function Editor() {
         q.questionType,
         q.options,
         draftSection || 'A',
+        undefined,
         1,
         undefined,
         q.subjectId,
@@ -925,35 +1059,38 @@ export default function Editor() {
       </div>
     );
   }
+  // Build sub-question tree for a given parent PQ id
+  const buildSubTree = (parentId: string): SubQuestionNode[] => {
+    return paperQuestionsList
+      .filter(pq => pq.parentId === parentId)
+      .map(pq => {
+        const q = getQuestion(pq.questionId);
+        return q ? { pq, question: q, children: buildSubTree(pq.id) } : null;
+      })
+      .filter(Boolean) as SubQuestionNode[];
+  };
 
   const renderQuestionRange = (startIdx: number, endIdx: number) => {
-    return paperQuestionsList.slice(startIdx, endIdx).map((pq, idx) => {
-      const globalIndex = startIdx + idx;
+    // Only render top-level questions (those without a parentId)
+    const topLevel = paperQuestionsList.slice(startIdx, endIdx).filter(pq => !pq.parentId);
+
+    return topLevel.map((pq, idx) => {
       const q = getQuestion(pq.questionId);
       if (!q) return null;
 
       let showSectionHeader: string | undefined;
-      let showTypeHeader: string | undefined;
 
-      const prevPQ = globalIndex > 0 ? paperQuestionsList[globalIndex - 1] : null;
+      const prevPQ = idx > 0 ? topLevel[idx - 1] : null;
       const prevQ = prevPQ ? getQuestion(prevPQ.questionId) : null;
 
       if (!prevPQ || prevPQ.section !== pq.section) {
         showSectionHeader = pq.section;
       }
 
-      const currentHeader = q.typeHeader || '';
-      const prevHeader = prevQ?.typeHeader || '';
-      if (currentHeader && currentHeader !== prevHeader) {
-        showTypeHeader = currentHeader;
-      }
-
+      // Question number within its section (top-level only)
       let questionNumber = 1;
-      for (let i = globalIndex - 1; i >= 0; i--) {
-        const itemPQ = paperQuestionsList[i];
-        if (itemPQ.section !== pq.section) {
-          break;
-        }
+      for (let i = idx - 1; i >= 0; i--) {
+        if (topLevel[i].section !== pq.section) break;
         questionNumber++;
       }
 
@@ -962,6 +1099,8 @@ export default function Editor() {
       const sectionMarks = showSectionHeader ? (sectionTotalMarks[showSectionHeader] || 0) : 0;
       const canMoveSectionUp = secIdx > 0;
       const canMoveSectionDown = secIdx !== -1 && secIdx < distinctSections.length - 1;
+
+      const subs = buildSubTree(pq.id);
 
       return (
         <SortableQuestion
@@ -978,15 +1117,20 @@ export default function Editor() {
           onMoveSectionUp={(sec) => handleMoveSection(sec, 'up')}
           onMoveSectionDown={(sec) => handleMoveSection(sec, 'down')}
           onAddQuestionToSection={handleAddQuestionToSection}
-          showTypeHeader={showTypeHeader}
-          canMoveUp={globalIndex > 0}
-          canMoveDown={globalIndex < paperQuestionsList.length - 1}
+          canMoveUp={idx > 0}
+          canMoveDown={idx < topLevel.length - 1}
           onMoveUp={() => handleMoveQuestion(pq.id, 'up')}
           onMoveDown={() => handleMoveQuestion(pq.id, 'down')}
           onAddSubQuestion={() => handleAddSubQuestion(pq)}
           onSelect={() => { setSelectedPQId(pq.id); setDraftType(null); }}
           onRemove={() => handleRemovePQ(pq.id, pq.questionId)}
-          onEdit={() => handleEditQuestion(pq.id)}
+          onEdit={() => { handleEditQuestion(pq.id); setIsConstructorOpen(true); setActiveView('add-question'); }}
+          subQuestions={subs}
+          onEditSubQuestion={(pqId) => { handleEditQuestion(pqId); setIsConstructorOpen(true); setActiveView('add-question'); }}
+          onRemoveSubQuestion={(pqId, qId) => handleRemovePQ(pqId, qId)}
+          onMoveSubQuestionUp={(pqId) => handleMoveQuestion(pqId, 'up')}
+          onMoveSubQuestionDown={(pqId) => handleMoveQuestion(pqId, 'down')}
+          onAddSubSubQuestion={(pq) => handleAddSubQuestion(pq)}
         />
       );
     });
@@ -1138,8 +1282,8 @@ export default function Editor() {
           <button className="toolbar-btn-outlined" onClick={() => setShowPaperSettings(true)}>
             <Settings size={14} /> Paper Settings
           </button>
-          <button className="toolbar-btn-accent" onClick={() => setShowCreatorHub(true)}>
-            <Plus size={14} /> Add Question
+          <button className="toolbar-btn-accent" onClick={() => { setIsConstructorOpen(true); setActiveView('tree'); }}>
+            <Layers size={14} /> Tree View
           </button>
           <button className="toolbar-btn-accent" onClick={exportPDF}>
             <Download size={14} /> Export PDF
@@ -1200,7 +1344,7 @@ export default function Editor() {
                 </div>
                 <h3>No questions yet</h3>
                 <p>Click "Add Question" in the toolbar to get started</p>
-                <button className="btn btn-primary" onClick={() => setShowCreatorHub(true)} style={{ marginTop: 16 }}>
+                <button className="btn btn-primary" onClick={() => { setIsConstructorOpen(true); setActiveView('tree'); }} style={{ marginTop: 16 }}>
                   <Plus size={14} style={{ marginRight: 6 }} />
                   Add Question
                 </button>
@@ -1397,153 +1541,302 @@ export default function Editor() {
         </div>
       )}
 
-      {/* QUESTION EDITOR MODAL */}
-      {draftType && (
-        <div className="modal-overlay" onClick={resetDraft}>
-          <div className="modal question-editor-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+
+      {/* TEST PAPER CONSTRUCTOR MODAL */}
+      {isConstructorOpen && (
+        <div className="modal-overlay" onClick={() => setIsConstructorOpen(false)}>
+          <div className="modal question-editor-modal" style={{ maxWidth: '800px', height: '85vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div>
-                <h2 className="modal-title">
-                  {editingQuestionId ? 'Edit Question' : 'Add Question'}
-                </h2>
+                <h2 className="modal-title">Test Paper Constructor</h2>
                 <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  {BLOCK_TYPES.find(b => b.type === draftType)?.label || draftType}
+                  Configure sections, questions, and nested subquestions
                 </p>
               </div>
-              <button className="modal-close-btn" onClick={resetDraft}>
+              <button className="modal-close-btn" onClick={() => setIsConstructorOpen(false)}>
                 <X size={18} />
               </button>
             </div>
-            <div className="modal-content" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Section</label>
-                  <select
-                    className="property-input"
-                    value={draftSection}
-                    onChange={(e) => setDraftSection(e.target.value as PaperSection)}
-                  >
-                    <option value="A">Section A</option>
-                    <option value="B">Section B</option>
-                    <option value="C">Section C</option>
-                    <option value="D">Section D</option>
-                  </select>
-                </div>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Marks</label>
-                  <input
-                    type="number"
-                    className="property-input"
-                    value={draftMarks}
-                    onChange={(e) => setDraftMarks(parseInt(e.target.value) || 1)}
-                    min={1}
-                  />
-                </div>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Difficulty</label>
-                  <select
-                    className="property-input"
-                    value={draftDifficulty}
-                    onChange={(e) => setDraftDifficulty(e.target.value as Difficulty)}
-                  >
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                  </select>
-                </div>
+
+            {totalQuestionsCount > 0 && (
+              <div style={{ display: 'flex', gap: 10, padding: '10px 20px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', flexShrink: 0, alignItems: 'center' }}>
+                <button className={`btn ${activeView === 'tree' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveView('tree')} style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center' }}>
+                  <Layers size={14} style={{ marginRight: 6 }} /> Tree View
+                </button>
+                <div style={{ flex: 1 }} />
+                <button className={`btn ${activeView === 'add-section' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveView('add-section')} style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center' }}>
+                  <FolderPlus size={14} style={{ marginRight: 6 }} /> Add Section
+                </button>
+                <button className={`btn ${activeView === 'add-question' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => {
+                  if (sections.length > 0 && !draftSection) setDraftSection(sections[0].id);
+                  if (!draftType) setDraftType('subjective');
+                  setActiveView('add-question');
+                }} style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center' }}>
+                  <Plus size={14} style={{ marginRight: 6 }} /> Add Question
+                </button>
               </div>
-              <div className="property-field">
-                <label className="property-label">Question Header Label</label>
-                <input
-                  type="text"
-                  className="property-input"
-                  placeholder="e.g., Answer the following:"
-                  value={draftTypeHeader}
-                  onChange={(e) => setDraftTypeHeader(e.target.value)}
-                />
-              </div>
-              <div className="property-field">
-                <label className="property-label">Question Content</label>
-                <FullQuill
-                  value={draftContent}
-                  onChange={(content) => setDraftContent(content)}
-                  placeholder="Enter your question..."
-                  openMathDialog={openMathDialog}
-                  toolbarId="question-toolbar"
-                />
-              </div>
-              {draftType === 'mcq' && (
-                <div className="property-field">
-                  <label className="property-label">Options</label>
-                  {draftOptions.map((opt, i) => (
-                    <div key={i} style={{ marginBottom: 12 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Option {String.fromCharCode(65 + i)}</label>
-                        {draftOptions.length > 2 && (
-                          <button
-                            className="hover-action-btn danger"
-                            onClick={() => handleRemoveOption(i)}
-                            title={`Remove Option ${String.fromCharCode(65 + i)}`}
-                            style={{ padding: '2px 4px' }}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        )}
-                      </div>
-                      <FullQuill
-                        value={opt}
-                        onChange={(val) => {
-                          const newOpts = [...draftOptions];
-                          newOpts[i] = val;
-                          setDraftOptions(newOpts);
-                        }}
-                        placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                        openMathDialog={openMathDialog}
-                        toolbarId={`option-toolbar-${i}`}
-                      />
-                    </div>
-                  ))}
-                  <button
-                    className="btn btn-secondary"
-                    onClick={handleAddOption}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}
-                  >
-                    <Plus size={14} />
-                    Add Option
-                  </button>
-                </div>
-              )}
-              {draftType === 'truefalse' && (
-                <div className="property-field">
-                  <label className="property-label">Answer</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-secondary" style={{ flex: 1 }}>True</button>
-                    <button className="btn btn-secondary" style={{ flex: 1 }}>False</button>
+            )}
+
+            <div className="modal-content" style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+              {totalQuestionsCount === 0 && activeView === 'tree' && (
+                <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                  <h3 style={{ marginBottom: 10 }}>No questions added yet</h3>
+                  <p style={{ color: 'var(--text-secondary)', marginBottom: 30 }}>Get started by adding a section or your first question.</p>
+                  <div style={{ display: 'flex', gap: 15, justifyContent: 'center' }}>
+                    <button className="btn btn-primary" onClick={() => setActiveView('add-section')} style={{ padding: '15px 25px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                      <FolderPlus size={24} />
+                      <span>Add Section</span>
+                    </button>
+                    <button className="btn btn-primary" onClick={() => {
+                      if (sections.length === 0) {
+                        setDraftSection('Section A');
+                      }
+                      setActiveView('add-question');
+                      setDraftType('subjective');
+                    }} style={{ padding: '15px 25px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                      <Plus size={24} />
+                      <span>Add Question</span>
+                    </button>
                   </div>
                 </div>
               )}
 
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={resetDraft}>Cancel</button>
-              {editingQuestionId ? (
-                <button
-                  className="btn btn-primary"
-                  onClick={handleUpdateQuestion}
-                  disabled={saving || !draftContent.trim()}
-                >
-                  {saving ? 'Updating...' : 'Update Question'}
-                </button>
-              ) : (
-                <button
-                  className="btn btn-primary"
-                  onClick={handleAddDraftToPaper}
-                  disabled={saving || !draftContent.trim()}
-                >
-                  {saving ? 'Adding...' : 'Add to Paper'}
-                </button>
+              {activeView === 'tree' && totalQuestionsCount > 0 && (
+                <div className="tree-view">
+                  {sections.map(sec => (
+                    <div key={sec.id} style={{ marginBottom: 24 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', backgroundColor: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 12, border: '1px solid var(--border-color)' }}>
+                        <FolderPlus size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                        <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{sec.title}</span>
+                        <button className="btn btn-secondary" style={{ padding: '5px 10px', fontSize: 12, display: 'flex', alignItems: 'center', flexShrink: 0 }} onClick={() => {
+                          setDraftSection(sec.id);
+                          setQParentId('');
+                          setDraftType('subjective');
+                          setActiveView('add-question');
+                        }}>
+                          <Plus size={12} style={{ marginRight: 4 }} /> Add Q
+                        </button>
+                      </div>
+                      <div style={{ paddingLeft: 8, position: 'relative' }}>
+                        {sec.questions.map((q: any, i: number) => {
+                          const renderNode = (node: any, depth: number, idx: number, isLastChild: boolean) => {
+                            const isExp = expandedNodes[node.id];
+                            const hasChildren = node.children && node.children.length > 0;
+                            let numLabel = `Q${idx + 1}`;
+                            if (depth === 1) numLabel = `(${String.fromCharCode(97 + idx)})`;
+                            if (depth === 2) numLabel = `(${['i', 'ii', 'iii', 'iv', 'v'][idx] || idx + 1})`;
+                            if (depth >= 3) numLabel = `•`;
+
+                            return (
+                              <div key={node.id} style={{ position: 'relative', marginLeft: depth > 0 ? 24 : 0, marginTop: 12 }}>
+                                {depth > 0 && (
+                                  <div style={{
+                                    position: 'absolute',
+                                    left: -20,
+                                    top: -12,
+                                    bottom: isLastChild ? '50%' : -12,
+                                    borderLeft: '2px solid var(--border-color)',
+                                    borderBottom: isLastChild ? '2px solid var(--border-color)' : 'none',
+                                    width: 16,
+                                    borderBottomLeftRadius: isLastChild ? 6 : 0,
+                                    zIndex: 0
+                                  }} />
+                                )}
+                                {depth > 0 && !isLastChild && (
+                                  <div style={{
+                                    position: 'absolute',
+                                    left: -20,
+                                    top: '50%',
+                                    width: 16,
+                                    borderTop: '2px solid var(--border-color)',
+                                    zIndex: 0
+                                  }} />
+                                )}
+                                
+                                <div style={{ 
+                                  position: 'relative', 
+                                  zIndex: 1, 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: 12, 
+                                  padding: '12px 16px', 
+                                  border: '1px solid var(--border-color)', 
+                                  borderRadius: 10, 
+                                  backgroundColor: 'var(--bg-primary)',
+                                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                                  transition: 'all 0.2s ease',
+                                  cursor: 'default'
+                                }}>
+                                  <button onClick={() => toggleExpand(node.id)} style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 6, cursor: hasChildren ? 'pointer' : 'default', opacity: hasChildren ? 1 : 0, padding: 4, display: 'flex', alignItems: 'center', flexShrink: 0, transition: 'background 0.2s' }} className={hasChildren ? 'hover-bg-darker' : ''}>
+                                    {isExp ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                  </button>
+                                  
+                                  <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center',
+                                    background: 'var(--accent)',
+                                    color: 'white',
+                                    fontWeight: 700, 
+                                    minWidth: 32, 
+                                    height: 32,
+                                    borderRadius: 8,
+                                    flexShrink: 0, 
+                                    fontSize: 13 
+                                  }}>
+                                    {numLabel}
+                                  </div>
+
+                                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }} dangerouslySetInnerHTML={{ __html: node.text }} />
+                                    <div style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, alignItems: 'center' }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4 }}><span style={{fontWeight:600}}>{node.marks}</span> marks</span>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(245, 166, 35, 0.1)', color: 'var(--accent)', padding: '2px 6px', borderRadius: 4, textTransform: 'capitalize' }}>{node.type}</span>
+                                      {hasChildren && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4 }}>{node.children.length} sub-question{node.children.length > 1 ? 's' : ''}</span>}
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                                    <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, display: 'flex', alignItems: 'center', border: '1px solid var(--border-color)' }} onClick={() => {
+                                      setDraftSection(sec.id);
+                                      setQParentId(node.id);
+                                      setDraftType('subjective');
+                                      setActiveView('add-question');
+                                    }}>+ Sub</button>
+                                    <div style={{ width: 1, height: 24, background: 'var(--border-color)', margin: '0 4px' }} />
+                                    <button className="hover-action-btn" style={{ padding: 6, borderRadius: 6, display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} onClick={() => { handleEditQuestion(node.id); setActiveView('add-question'); }} title="Edit">
+                                      <Pencil size={14} />
+                                    </button>
+                                    <button className="hover-action-btn danger" style={{ padding: 6, borderRadius: 6, display: 'flex', alignItems: 'center', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)' }} onClick={() => handleRemovePQ(node.id, node.questionId)} title="Delete">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {hasChildren && isExp && (
+                                  <div style={{ position: 'relative', marginTop: 4 }}>
+                                    {node.children.map((child: any, cidx: number) => renderNode(child, depth + 1, cidx, cidx === node.children.length - 1))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          };
+                          return renderNode(q, 0, i, i === sec.questions.length - 1);
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeView === 'add-section' && (
+                <div style={{ maxWidth: 500, margin: '0 auto', padding: '20px', border: '1px solid var(--border-color)', borderRadius: 8 }}>
+                  <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                    <FolderPlus size={18} /> Add New Section
+                  </h3>
+                  <div className="property-field">
+                    <label className="property-label">Section Title</label>
+                    <input
+                      type="text"
+                      className="property-input"
+                      placeholder="e.g., Section A: Objective Type"
+                      value={newSectionTitle}
+                      onChange={(e) => setNewSectionTitle(e.target.value)}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+                    {totalQuestionsCount > 0 && <button className="btn btn-secondary" onClick={() => setActiveView('tree')}>Cancel</button>}
+                    <button className="btn btn-primary" onClick={() => {
+                      if (!newSectionTitle.trim()) return;
+                      // Just set draftSection to new title, it will be added when a question is added
+                      setDraftSection(newSectionTitle);
+                      setNewSectionTitle('');
+                      setQParentId('');
+                      setDraftType('subjective');
+                      setActiveView('add-question');
+                    }}>Continue to Add Questions</button>
+                  </div>
+                </div>
+              )}
+
+              {activeView === 'add-question' && draftType && (
+                <div style={{ maxWidth: 700, margin: '0 auto' }}>
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 15 }}>
+                    <div className="property-field" style={{ flex: 1 }}>
+                      <label className="property-label">Target Section</label>
+                      <select className="property-input" value={draftSection} onChange={(e) => { setDraftSection(e.target.value); setQParentId(''); }}>
+                        {sections.length > 0 ? sections.map(s => <option key={s.id} value={s.id}>{s.title}</option>) : <option value={draftSection}>{draftSection}</option>}
+                      </select>
+                    </div>
+                    <div className="property-field" style={{ flex: 1 }}>
+                      <label className="property-label">Parent Question (Optional)</label>
+                      <select className="property-input" value={qParentId} onChange={(e) => setQParentId(e.target.value)}>
+                        <option value="">-- Top Level --</option>
+                        {parentCandidates.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 15 }}>
+                    <div className="property-field" style={{ flex: 1 }}>
+                      <label className="property-label">Question Type</label>
+                      <select className="property-input" value={draftType} onChange={(e) => setDraftType(e.target.value as any)}>
+                        <option value="subjective">Subjective</option>
+                        <option value="mcq">Multiple Choice</option>
+                      </select>
+                    </div>
+                    <div className="property-field" style={{ flex: 1 }}>
+                      <label className="property-label">Marks</label>
+                      <input type="number" className="property-input" value={draftMarks} onChange={(e) => setDraftMarks(parseInt(e.target.value) || 1)} min={1} />
+                    </div>
+                    <div className="property-field" style={{ flex: 1 }}>
+                      <label className="property-label">Difficulty</label>
+                      <select className="property-input" value={draftDifficulty} onChange={(e) => setDraftDifficulty(e.target.value as Difficulty)}>
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="property-field" style={{ marginBottom: 15 }}>
+                    <label className="property-label">Question Content</label>
+                    <FullQuill value={draftContent} onChange={setDraftContent} placeholder="Enter your question..." openMathDialog={openMathDialog} toolbarId="question-toolbar" />
+                  </div>
+
+                  {draftType === 'mcq' && (
+                    <div className="property-field" style={{ marginBottom: 15 }}>
+                      <label className="property-label">Options</label>
+                      {draftOptions.map((opt, i) => (
+                        <div key={i} style={{ marginBottom: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Option {String.fromCharCode(65 + i)}</label>
+                            {draftOptions.length > 2 && (
+                              <button className="hover-action-btn danger" onClick={() => handleRemoveOption(i)} style={{ padding: '2px 4px' }}>
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                          <FullQuill value={opt} onChange={(val) => { const newOpts = [...draftOptions]; newOpts[i] = val; setDraftOptions(newOpts); }} placeholder={`Option ${String.fromCharCode(65 + i)}`} openMathDialog={openMathDialog} toolbarId={`option-toolbar-${i}`} />
+                        </div>
+                      ))}
+                      <button className="btn btn-secondary" onClick={handleAddOption} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}>
+                        <Plus size={14} /> Add Option
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
+
+            {activeView === 'add-question' && (
+              <div className="modal-actions" style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', flexShrink: 0 }}>
+                {totalQuestionsCount > 0 && <button className="btn btn-secondary" onClick={() => setActiveView('tree')}>Cancel</button>}
+                <button className="btn btn-primary" onClick={handleAddDraftToPaper} disabled={saving || !draftContent.trim()}>
+                  {saving ? 'Adding...' : (editingQuestionId ? 'Update Question' : 'Add Question')}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
