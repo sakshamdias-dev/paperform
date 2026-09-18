@@ -2187,16 +2187,46 @@ textarea::placeholder {
   background: #f1f5f9;
 }
 
+.q-row {
+  border-radius: 8px;
+  transition: background-color 0.15s ease;
+  padding-right: 8px;
+  margin-right: -8px;
+  padding-left: 4px;
+  margin-left: -4px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  margin-top: -4px;
+  margin-bottom: -4px;
+}
+
+.q-row:hover {
+  background-color: rgba(241, 245, 249, 0.5); /* subtle highlight */
+}
+
 .question-card-actions {
+  position: absolute;
+  right: 100%;
+  margin-right: 12px;
   display: flex;
   align-items: center;
   gap: 5px;
-  opacity: 0.85;
-  transition: opacity 0.15s ease;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.15s ease;
+  background: var(--surface, #ffffff);
+  padding: 4px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--border, #e5e7eb);
+  z-index: 10;
 }
 
-.rendered-question-item:hover .question-card-actions {
+.q-row:hover .question-card-actions,
+.question-card-actions:focus-within {
   opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-4px);
 }
 
 .q-subquestion-btn {
@@ -3606,4 +3636,400 @@ math-virtual-keyboard,
 :root {
   --suggestion-zindex: 10005 !important;
   --keyboard-zindex: 10005 !important;
+}
+
+
+/* ═══════════════════════════════════════════════════
+   TREE VIEW — Question Paper Constructor
+   ═══════════════════════════════════════════════════ */
+
+.tree-view {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ── Section Card ── */
+.tree-section {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.tree-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #f0f7ff 0%, #f8f9ff 100%);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.tree-section-header::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #4f8ef7, #6c63ff);
+  border-radius: 0 2px 2px 0;
+}
+
+.tree-section-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #4f8ef7, #6c63ff);
+  color: white;
+  flex-shrink: 0;
+}
+
+.tree-section-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.tree-section-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.tree-section-stats {
+  display: flex;
+  gap: 12px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.tree-section-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tree-section-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid rgba(79, 142, 247, 0.3);
+  background: rgba(79, 142, 247, 0.08);
+  color: #4f8ef7;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.tree-section-add-btn:hover {
+  background: rgba(79, 142, 247, 0.15);
+  border-color: rgba(79, 142, 247, 0.5);
+}
+
+/* ── Section body (question list) ── */
+.tree-section-body {
+  padding: 12px 16px 16px 16px;
+}
+
+/* ── Question nodes ── */
+.tree-children {
+  position: relative;
+  padding-left: 28px;
+  margin-top: 4px;
+}
+
+/* Vertical connector line for children */
+.tree-children::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 0;
+  bottom: 20px;
+  width: 2px;
+  background: linear-gradient(180deg, #d0d5dd, #e8ecf0);
+  border-radius: 1px;
+}
+
+.tree-node {
+  position: relative;
+  margin-top: 10px;
+}
+
+/* Horizontal connector branch */
+.tree-node-branch {
+  position: absolute;
+  left: -15px;
+  top: 22px;
+  width: 14px;
+  height: 2px;
+  background: #d0d5dd;
+}
+
+/* Dot at branch junction */
+.tree-node-branch::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d0d5dd;
+  border: 2px solid var(--surface);
+}
+
+.tree-node-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  transition: all 0.2s ease;
+  cursor: default;
+  position: relative;
+}
+
+.tree-node-card:hover {
+  border-color: #c4cdd5;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+/* Depth-based left border accent */
+.tree-node-card[data-depth="0"] {
+  border-left: 3px solid #4f8ef7;
+}
+.tree-node-card[data-depth="1"] {
+  border-left: 3px solid #8b5cf6;
+}
+.tree-node-card[data-depth="2"] {
+  border-left: 3px solid #06b6d4;
+}
+.tree-node-card[data-depth="3"] {
+  border-left: 3px solid #f59e0b;
+}
+
+/* ── Expand toggle ── */
+.tree-node-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  padding: 0;
+}
+
+.tree-node-toggle:hover {
+  background: #e8ecf0;
+  color: var(--text-primary);
+}
+
+.tree-node-toggle.invisible {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Number badge ── */
+.tree-node-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  letter-spacing: -0.02em;
+}
+
+.tree-node-badge[data-depth="0"] {
+  background: linear-gradient(135deg, #4f8ef7, #3b7de6);
+  color: white;
+}
+.tree-node-badge[data-depth="1"] {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: white;
+}
+.tree-node-badge[data-depth="2"] {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  color: white;
+}
+.tree-node-badge[data-depth="3"] {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+}
+
+/* ── Content area ── */
+.tree-node-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tree-node-text {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node-text p {
+  margin: 0;
+  display: inline;
+}
+
+.tree-node-meta {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.tree-node-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 5px;
+  line-height: 1.5;
+}
+
+.tree-node-pill.marks {
+  background: #f0f7ff;
+  color: #4f8ef7;
+  border: 1px solid rgba(79, 142, 247, 0.15);
+}
+
+.tree-node-pill.type {
+  background: #fef3e2;
+  color: #d97706;
+  border: 1px solid rgba(217, 119, 6, 0.15);
+  text-transform: capitalize;
+}
+
+.tree-node-pill.children-count {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid rgba(22, 163, 74, 0.15);
+}
+
+/* ── Action buttons ── */
+.tree-node-actions {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tree-node-card:hover .tree-node-actions {
+  opacity: 1;
+}
+
+.tree-node-actions .tree-act-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  margin: 0 3px;
+}
+
+.tree-act-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.tree-act-btn:hover {
+  background: #e8ecf0;
+  color: var(--text-primary);
+  border-color: #c4cdd5;
+}
+
+.tree-act-btn.sub {
+  color: #4f8ef7;
+  border-color: rgba(79, 142, 247, 0.25);
+  background: rgba(79, 142, 247, 0.06);
+}
+
+.tree-act-btn.sub:hover {
+  background: rgba(79, 142, 247, 0.12);
+  border-color: rgba(79, 142, 247, 0.4);
+}
+
+.tree-act-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.tree-act-icon:hover {
+  background: #e8ecf0;
+  color: var(--text-primary);
+}
+
+.tree-act-icon.danger {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(239, 68, 68, 0.15);
+}
+
+.tree-act-icon.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* ── Empty tree state ── */
+.tree-empty-section {
+  text-align: center;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-style: italic;
 }

@@ -251,7 +251,7 @@ function SortableQuestion({
 
       {/* Clean HTML - Question Content & Options with Inline Actions */}
       <div className="clean-question">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, position: 'relative' }}>
+        <div className="q-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, position: 'relative' }}>
           <div className="q-drag-handle" {...attributes} {...listeners} title="Drag to reorder">
             <GripVertical size={14} />
           </div>
@@ -275,11 +275,8 @@ function SortableQuestion({
             </div>
           </div>
 
-          {/* Right side on the same level: Marks + Question Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 16 }}>
-            <span className="marks-inline">
-              {paperQuestion.marks}m
-            </span>
+          {/* Right side on the same level: Question Controls + Marks */}
+          <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, marginLeft: 16, position: 'relative' }}>
             <div className="question-card-actions">
               {onAddSubQuestion && (
                 <button
@@ -326,6 +323,9 @@ function SortableQuestion({
                 <Trash2 size={13} />
               </button>
             </div>
+            <span className="marks-inline" style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
+              {paperQuestion.marks}m
+            </span>
           </div>
         </div>
 
@@ -344,7 +344,7 @@ function SortableQuestion({
 
                 return (
                   <React.Fragment key={node.pq.id}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, position: 'relative', marginTop: 10 }}>
+                    <div className="q-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, position: 'relative', marginTop: 10 }}>
                       <div style={{ width: 14, flexShrink: 0 }} />
                       <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, minWidth: 0, marginLeft: depth * 28 }}>
                         <span className="q-number" style={{ fontSize: '0.85em', minWidth: 24 }}>{label}</span>
@@ -363,8 +363,7 @@ function SortableQuestion({
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 16 }}>
-                        <span className="marks-inline" style={{ fontSize: '0.85em' }}>{node.pq.marks}m</span>
+                      <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, marginLeft: 16, position: 'relative' }}>
                         <div className="question-card-actions">
                           {onAddSubSubQuestion && (
                             <button className="q-subquestion-btn" onClick={(e) => { e.stopPropagation(); onAddSubSubQuestion(node.pq); }} title="Add Subquestion">
@@ -393,6 +392,7 @@ function SortableQuestion({
                             </button>
                           )}
                         </div>
+                        <span className="marks-inline" style={{ fontSize: '0.85em' }}>{node.pq.marks}m</span>
                       </div>
                     </div>
                     {node.children && node.children.length > 0 && node.children.map((child, ci) => renderSubQ(child, depth + 1, ci, node.children.length))}
@@ -562,6 +562,7 @@ export default function Editor() {
     updateQuestionPaper,
     createAndAddQuestion,
     updateQuestion,
+    updatePaperQuestion,
     deleteQuestion,
   } = useStore();
 
@@ -582,6 +583,7 @@ export default function Editor() {
   const [draftDifficulty, setDraftDifficulty] = useState<Difficulty>('medium');
   const [draftTypeHeader, setDraftTypeHeader] = useState('');
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  const [editingPQId, setEditingPQId] = useState<string | null>(null);
 
   const [isConstructorOpen, setIsConstructorOpen] = useState(false);
   const [activeView, setActiveView] = useState<'tree' | 'add-section' | 'add-question'>('tree');
@@ -688,9 +690,13 @@ export default function Editor() {
   const getAllQuestionsFlat = (qs: any[], depth = 0): any[] => {
     let result: any[] = [];
     qs.forEach((q) => {
-      const prefix = '— '.repeat(depth);
-      const text = q.text ? q.text.replace(/<[^>]*>?/gm, '').substring(0, 45) : 'Empty';
-      result.push({ id: q.id, label: `${prefix} ${text}...` });
+      let text = q.text ? q.text.replace(/<[^>]*>?/gm, '') : 'Empty';
+      // Decode common HTML entities that come from Quill
+      text = text.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+      text = text.trim().substring(0, 45);
+      
+      const prefix = depth > 0 ? '\u21B3 ' : ''; // using a nice arrow instead of dashes, or just empty space
+      result.push({ id: q.id, label: `${prefix}${text}...` });
       if (q.children && q.children.length > 0) {
         result = result.concat(getAllQuestionsFlat(q.children, depth + 1));
       }
@@ -852,31 +858,59 @@ export default function Editor() {
     setSaving(true);
     try {
       const options = draftType === 'mcq' ? draftOptions.filter(o => o.trim()) : [];
-      const result = await createAndAddQuestion(
-        id,
-        draftContent.trim(),
-        draftType,
-        options.length > 0 ? options : undefined,
-        draftSection,
-        qParentId || undefined,
-        draftMarks,
-        undefined,
-        paper?.subjectId,
-        paper?.classId,
-        draftDifficulty,
-        undefined,
-        undefined,
-        draftTypeHeader || undefined,
-      );
-      if (result) {
-        showToastMessage('Question added to paper!');
+
+      // If we are editing an existing question, update it instead of creating a new one
+      if (editingQuestionId && editingPQId) {
+        await updateQuestion(editingQuestionId, {
+          content: draftContent.trim(),
+          questionType: draftType,
+          options: options.length > 0 ? options : [],
+          difficulty: draftDifficulty,
+          typeHeader: draftTypeHeader || undefined,
+        });
+        await updatePaperQuestion(editingPQId, {
+          marks: draftMarks,
+          section: draftSection,
+          parentId: qParentId || null,
+        });
+        showToastMessage('Question updated!');
         setDraftType(null);
         setDraftContent('');
         setDraftOptions(['', '', '', '']);
         setEditingQuestionId(null);
+        setEditingPQId(null);
+        setQParentId('');
         setActiveView('tree');
       } else {
-        showToastMessage('Failed to add question. Check console.');
+        // Creating a new question
+        const result = await createAndAddQuestion(
+          id,
+          draftContent.trim(),
+          draftType,
+          options.length > 0 ? options : undefined,
+          draftSection,
+          qParentId || undefined,
+          draftMarks,
+          undefined,
+          paper?.subjectId,
+          paper?.classId,
+          draftDifficulty,
+          undefined,
+          undefined,
+          draftTypeHeader || undefined,
+        );
+        if (result) {
+          showToastMessage('Question added to paper!');
+          setDraftType(null);
+          setDraftContent('');
+          setDraftOptions(['', '', '', '']);
+          setEditingQuestionId(null);
+          setEditingPQId(null);
+          setQParentId('');
+          setActiveView('tree');
+        } else {
+          showToastMessage('Failed to add question. Check console.');
+        }
       }
     } finally {
       setSaving(false);
@@ -918,6 +952,7 @@ export default function Editor() {
     const q = questions.find(q => q.id === pq.questionId);
     if (!q) return;
     setEditingQuestionId(q.id);
+    setEditingPQId(pq.id);
     setDraftType(q.questionType);
     setDraftContent(q.content);
     const opts = q.options || [];
@@ -926,6 +961,7 @@ export default function Editor() {
     setDraftMarks(pq.marks);
     setDraftDifficulty(q.difficulty || 'medium');
     setDraftTypeHeader(q.typeHeader || '');
+    setQParentId(pq.parentId || '');
     setSelectedPQId(null);
   };
 
@@ -1522,6 +1558,12 @@ export default function Editor() {
                 <button className={`btn ${activeView === 'add-question' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => {
                   if (sections.length > 0 && !draftSection) setDraftSection(sections[0].id);
                   if (!draftType) setDraftType('subjective');
+                  // Reset editing state so we start fresh
+                  setEditingQuestionId(null);
+                  setEditingPQId(null);
+                  setDraftContent('');
+                  setDraftOptions(['', '', '', '']);
+                  setQParentId('');
                   setActiveView('add-question');
                 }} style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center' }}>
                   <Plus size={14} style={{ marginRight: 6 }} /> Add Question
@@ -1555,129 +1597,130 @@ export default function Editor() {
 
               {activeView === 'tree' && totalQuestionsCount > 0 && (
                 <div className="tree-view">
-                  {sections.map(sec => (
-                    <div key={sec.id} style={{ marginBottom: 24 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', backgroundColor: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 12, border: '1px solid var(--border-color)' }}>
-                        <FolderPlus size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-                        <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{sec.title}</span>
-                        <button className="btn btn-secondary" style={{ padding: '5px 10px', fontSize: 12, display: 'flex', alignItems: 'center', flexShrink: 0 }} onClick={() => {
-                          setDraftSection(sec.id);
-                          setQParentId('');
-                          setDraftType('subjective');
-                          setActiveView('add-question');
-                        }}>
-                          <Plus size={12} style={{ marginRight: 4 }} /> Add Q
-                        </button>
-                      </div>
-                      <div style={{ paddingLeft: 8, position: 'relative' }}>
-                        {sec.questions.map((q: any, i: number) => {
-                          const renderNode = (node: any, depth: number, idx: number, isLastChild: boolean) => {
-                            const isExp = expandedNodes[node.id];
-                            const hasChildren = node.children && node.children.length > 0;
-                            let numLabel = `Q${idx + 1}`;
-                            if (depth === 1) numLabel = `(${String.fromCharCode(97 + idx)})`;
-                            if (depth === 2) numLabel = `(${['i', 'ii', 'iii', 'iv', 'v'][idx] || idx + 1})`;
-                            if (depth >= 3) numLabel = `•`;
+                  {sections.map(sec => {
+                    const sectionQCount = sec.questions.length;
+                    const sectionTotalM = sec.questions.reduce((sum: number, q: any) => {
+                      const countMarks = (node: any): number => {
+                        let total = node.marks || 0;
+                        if (node.children) node.children.forEach((c: any) => { total += countMarks(c); });
+                        return total;
+                      };
+                      return sum + countMarks(q);
+                    }, 0);
 
-                            return (
-                              <div key={node.id} style={{ position: 'relative', marginLeft: depth > 0 ? 24 : 0, marginTop: 12 }}>
-                                {depth > 0 && (
-                                  <div style={{
-                                    position: 'absolute',
-                                    left: -20,
-                                    top: -12,
-                                    bottom: isLastChild ? '50%' : -12,
-                                    borderLeft: '2px solid var(--border-color)',
-                                    borderBottom: isLastChild ? '2px solid var(--border-color)' : 'none',
-                                    width: 16,
-                                    borderBottomLeftRadius: isLastChild ? 6 : 0,
-                                    zIndex: 0
-                                  }} />
-                                )}
-                                {depth > 0 && !isLastChild && (
-                                  <div style={{
-                                    position: 'absolute',
-                                    left: -20,
-                                    top: '50%',
-                                    width: 16,
-                                    borderTop: '2px solid var(--border-color)',
-                                    zIndex: 0
-                                  }} />
-                                )}
-                                
-                                <div style={{ 
-                                  position: 'relative', 
-                                  zIndex: 1, 
-                                  display: 'flex', 
-                                  alignItems: 'center', 
-                                  gap: 12, 
-                                  padding: '12px 16px', 
-                                  border: '1px solid var(--border-color)', 
-                                  borderRadius: 10, 
-                                  backgroundColor: 'var(--bg-primary)',
-                                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                                  transition: 'all 0.2s ease',
-                                  cursor: 'default'
-                                }}>
-                                  <button onClick={() => toggleExpand(node.id)} style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 6, cursor: hasChildren ? 'pointer' : 'default', opacity: hasChildren ? 1 : 0, padding: 4, display: 'flex', alignItems: 'center', flexShrink: 0, transition: 'background 0.2s' }} className={hasChildren ? 'hover-bg-darker' : ''}>
-                                    {isExp ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                  </button>
-                                  
-                                  <div style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center',
-                                    background: 'var(--accent)',
-                                    color: 'white',
-                                    fontWeight: 700, 
-                                    minWidth: 32, 
-                                    height: 32,
-                                    borderRadius: 8,
-                                    flexShrink: 0, 
-                                    fontSize: 13 
-                                  }}>
-                                    {numLabel}
-                                  </div>
+                    return (
+                      <div key={sec.id} className="tree-section">
+                        <div className="tree-section-header">
+                          <div className="tree-section-icon">
+                            <Layers size={16} />
+                          </div>
+                          <div className="tree-section-info">
+                            <div className="tree-section-title">{sec.title}</div>
+                            <div className="tree-section-stats">
+                              <span className="tree-section-stat">{sectionQCount} question{sectionQCount !== 1 ? 's' : ''}</span>
+                              <span className="tree-section-stat">•</span>
+                              <span className="tree-section-stat">{sectionTotalM} marks</span>
+                            </div>
+                          </div>
+                          <button className="tree-section-add-btn" onClick={() => {
+                            setDraftSection(sec.id);
+                            setQParentId('');
+                            setEditingQuestionId(null);
+                            setEditingPQId(null);
+                            setDraftType('subjective');
+                            setDraftContent('');
+                            setDraftOptions(['', '', '', '']);
+                            setActiveView('add-question');
+                          }}>
+                            <Plus size={13} /> Add Question
+                          </button>
+                        </div>
 
-                                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }} dangerouslySetInnerHTML={{ __html: node.text }} />
-                                    <div style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, alignItems: 'center' }}>
-                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4 }}><span style={{fontWeight:600}}>{node.marks}</span> marks</span>
-                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(245, 166, 35, 0.1)', color: 'var(--accent)', padding: '2px 6px', borderRadius: 4, textTransform: 'capitalize' }}>{node.type}</span>
-                                      {hasChildren && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4 }}>{node.children.length} sub-question{node.children.length > 1 ? 's' : ''}</span>}
+                        <div className="tree-section-body">
+                          {sec.questions.length === 0 ? (
+                            <div className="tree-empty-section">No questions in this section yet</div>
+                          ) : (
+                            sec.questions.map((q: any, i: number) => {
+                              const renderTreeNode = (node: any, depth: number, idx: number): React.ReactNode => {
+                                const isExp = expandedNodes[node.id] !== false; // default expanded
+                                const hasChildren = node.children && node.children.length > 0;
+                                let numLabel = `Q${idx + 1}`;
+                                if (depth === 1) numLabel = `${String.fromCharCode(97 + idx)}`;
+                                if (depth === 2) numLabel = `${['i', 'ii', 'iii', 'iv', 'v'][idx] || String(idx + 1)}`;
+                                if (depth >= 3) numLabel = '•';
+                                const depthStr = String(Math.min(depth, 3));
+
+                                return (
+                                  <div key={node.id} className="tree-node">
+                                    {depth > 0 && <div className="tree-node-branch" />}
+
+                                    <div className="tree-node-card" data-depth={depthStr}>
+                                      <button
+                                        className={`tree-node-toggle ${!hasChildren ? 'invisible' : ''}`}
+                                        onClick={() => toggleExpand(node.id)}
+                                      >
+                                        {isExp ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                      </button>
+
+                                      <div className="tree-node-badge" data-depth={depthStr}>
+                                        {numLabel}
+                                      </div>
+
+                                      <div className="tree-node-content">
+                                        <div className="tree-node-text" dangerouslySetInnerHTML={{ __html: node.text || '<em>Empty</em>' }} />
+                                        <div className="tree-node-meta">
+                                          <span className="tree-node-pill marks">
+                                            <strong>{node.marks}</strong> marks
+                                          </span>
+                                          <span className="tree-node-pill type">{node.type}</span>
+                                          {hasChildren && (
+                                            <span className="tree-node-pill children-count">
+                                              {node.children.length} sub-Q{node.children.length > 1 ? 's' : ''}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="tree-node-actions">
+                                        <button className="tree-act-btn sub" onClick={() => {
+                                          setDraftSection(sec.id);
+                                          setQParentId(node.id);
+                                          setEditingQuestionId(null);
+                                          setEditingPQId(null);
+                                          setDraftType('subjective');
+                                          setDraftContent('');
+                                          setDraftOptions(['', '', '', '']);
+                                          setActiveView('add-question');
+                                        }}>
+                                          <GitFork size={12} style={{ transform: 'rotate(90deg)' }} /> Sub
+                                        </button>
+                                        <div className="tree-act-divider" />
+                                        <button className="tree-act-icon" onClick={() => { handleEditQuestion(node.id); setActiveView('add-question'); }} title="Edit">
+                                          <Pencil size={13} />
+                                        </button>
+                                        <button className="tree-act-icon danger" onClick={() => handleRemovePQ(node.id, node.questionId)} title="Delete">
+                                          <Trash2 size={13} />
+                                        </button>
+                                      </div>
                                     </div>
-                                  </div>
 
-                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                                    <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, display: 'flex', alignItems: 'center', border: '1px solid var(--border-color)' }} onClick={() => {
-                                      setDraftSection(sec.id);
-                                      setQParentId(node.id);
-                                      setDraftType('subjective');
-                                      setActiveView('add-question');
-                                    }}>+ Sub</button>
-                                    <div style={{ width: 1, height: 24, background: 'var(--border-color)', margin: '0 4px' }} />
-                                    <button className="hover-action-btn" style={{ padding: 6, borderRadius: 6, display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }} onClick={() => { handleEditQuestion(node.id); setActiveView('add-question'); }} title="Edit">
-                                      <Pencil size={14} />
-                                    </button>
-                                    <button className="hover-action-btn danger" style={{ padding: 6, borderRadius: 6, display: 'flex', alignItems: 'center', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)' }} onClick={() => handleRemovePQ(node.id, node.questionId)} title="Delete">
-                                      <Trash2 size={14} />
-                                    </button>
+                                    {hasChildren && isExp && (
+                                      <div className="tree-children">
+                                        {node.children.map((child: any, cidx: number) =>
+                                          renderTreeNode(child, depth + 1, cidx)
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
-
-                                {hasChildren && isExp && (
-                                  <div style={{ position: 'relative', marginTop: 4 }}>
-                                    {node.children.map((child: any, cidx: number) => renderNode(child, depth + 1, cidx, cidx === node.children.length - 1))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          };
-                          return renderNode(q, 0, i, i === sec.questions.length - 1);
-                        })}
+                                );
+                              };
+                              return renderTreeNode(q, 0, i);
+                            })
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -1717,13 +1760,17 @@ export default function Editor() {
                     <div className="property-field" style={{ flex: 1 }}>
                       <label className="property-label">Target Section</label>
                       <select className="property-input" value={draftSection} onChange={(e) => { setDraftSection(e.target.value); setQParentId(''); }}>
-                        {sections.length > 0 ? sections.map(s => <option key={s.id} value={s.id}>{s.title}</option>) : <option value={draftSection}>{draftSection}</option>}
+                        {sections.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                        {/* Show the draft section if it's a new one not yet in the sections list */}
+                        {!sections.some(s => s.id === draftSection) && draftSection && (
+                          <option value={draftSection}>{draftSection} (new)</option>
+                        )}
                       </select>
                     </div>
                     <div className="property-field" style={{ flex: 1 }}>
                       <label className="property-label">Parent Question (Optional)</label>
                       <select className="property-input" value={qParentId} onChange={(e) => setQParentId(e.target.value)}>
-                        <option value="">-- Top Level --</option>
+                        <option value="">Top Level (No Parent)</option>
                         {parentCandidates.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
                       </select>
                     </div>
@@ -1785,7 +1832,7 @@ export default function Editor() {
               <div className="modal-actions" style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', flexShrink: 0 }}>
                 {totalQuestionsCount > 0 && <button className="btn btn-secondary" onClick={() => setActiveView('tree')}>Cancel</button>}
                 <button className="btn btn-primary" onClick={handleAddDraftToPaper} disabled={saving || !draftContent.trim()}>
-                  {saving ? 'Adding...' : (editingQuestionId ? 'Update Question' : 'Add Question')}
+                  {saving ? (editingQuestionId ? 'Updating...' : 'Adding...') : (editingQuestionId ? 'Update Question' : 'Add Question')}
                 </button>
               </div>
             )}
