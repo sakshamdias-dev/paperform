@@ -84,7 +84,7 @@ export interface PaperQuestion {
   paperId: string;
   questionId: string;
   section: string;
-  parentId?: string;
+  parentId?: string | null;
   marks: number;
   orderIndex: number;
   createdAt: number;
