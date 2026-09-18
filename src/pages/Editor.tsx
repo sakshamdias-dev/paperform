@@ -145,8 +145,6 @@ interface SortableQuestionProps {
   canMoveSectionDown?: boolean;
   onMoveSectionUp?: (section: string) => void;
   onMoveSectionDown?: (section: string) => void;
-  onAddQuestionToSection?: (section: string) => void;
-  showTypeHeader?: string;
   subQuestions?: SubQuestionNode[];
   onEditSubQuestion?: (pqId: string) => void;
   onRemoveSubQuestion?: (pqId: string, qId: string) => void;
@@ -191,8 +189,6 @@ function SortableQuestion({
   canMoveSectionDown,
   onMoveSectionUp,
   onMoveSectionDown,
-  onAddQuestionToSection,
-  showTypeHeader,
   subQuestions,
   onEditSubQuestion,
   onRemoveSubQuestion,
@@ -563,7 +559,6 @@ export default function Editor() {
     fetchQuestions,
     removeQuestionFromPaper,
     reorderPaperQuestions,
-    updatePaperQuestion,
     updateQuestionPaper,
     createAndAddQuestion,
     updateQuestion,
@@ -814,12 +809,6 @@ export default function Editor() {
     await reorderPaperQuestions(id, newList);
   };
 
-  const handleAddQuestionToSection = (section: string) => {
-    setDraftSection(section);
-    setIsConstructorOpen(true);
-    setActiveView('tree');
-  };
-
   const handleAddSubQuestion = (parentPQ: PaperQuestion) => {
     setDraftSection(parentPQ.section);
     setQParentId(parentPQ.id);
@@ -911,32 +900,6 @@ export default function Editor() {
     }
   };
 
-  const handleUpdateQuestion = async () => {
-    if (!editingQuestionId || !draftType || !draftContent.trim()) return;
-    setSaving(true);
-    try {
-      const options = draftType === 'mcq' ? draftOptions.filter(o => o.trim()) : [];
-      const pq = paperQuestionsList.find(p => p.questionId === editingQuestionId);
-      if (pq) {
-        handleUpdatePQ(pq.id, draftSection, draftMarks);
-      }
-      await updateQuestion(editingQuestionId, {
-        content: draftContent.trim(),
-        questionType: draftType,
-        options: options.length > 0 ? options : undefined,
-        difficulty: draftDifficulty,
-        typeHeader: draftTypeHeader || undefined,
-      });
-      showToastMessage('Question updated!');
-      setEditingQuestionId(null);
-      setDraftType(null);
-      setDraftContent('');
-      setDraftOptions(['', '', '', '']);
-      setActiveView('tree');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleRemovePQ = (_pqId: string, questionId: string) => {
     if (id) {
@@ -946,9 +909,7 @@ export default function Editor() {
     }
   };
 
-  const handleUpdatePQ = (pqId: string, section: PaperSection, marks: number) => {
-    updatePaperQuestion(pqId, { section, marks });
-  };
+
 
   const handleEditQuestion = (pqId?: string) => {
     const targetId = pqId || selectedPQId;
@@ -968,13 +929,6 @@ export default function Editor() {
     setSelectedPQId(null);
   };
 
-  const resetDraft = () => {
-    setDraftType(null);
-    setEditingQuestionId(null);
-    setDraftContent('');
-    setDraftOptions(['', '', '', '']);
-    setDraftTypeHeader('');
-  };
 
   const getQuestion = (questionId: string) => questions.find(q => q.id === questionId);
   const getCourse = (id?: string) => courses.find(c => c.id === id);
@@ -1081,7 +1035,6 @@ export default function Editor() {
       let showSectionHeader: string | undefined;
 
       const prevPQ = idx > 0 ? topLevel[idx - 1] : null;
-      const prevQ = prevPQ ? getQuestion(prevPQ.questionId) : null;
 
       if (!prevPQ || prevPQ.section !== pq.section) {
         showSectionHeader = pq.section;
@@ -1116,7 +1069,6 @@ export default function Editor() {
           canMoveSectionDown={canMoveSectionDown}
           onMoveSectionUp={(sec) => handleMoveSection(sec, 'up')}
           onMoveSectionDown={(sec) => handleMoveSection(sec, 'down')}
-          onAddQuestionToSection={handleAddQuestionToSection}
           canMoveUp={idx > 0}
           canMoveDown={idx < topLevel.length - 1}
           onMoveUp={() => handleMoveQuestion(pq.id, 'up')}
