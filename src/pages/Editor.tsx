@@ -22,6 +22,8 @@ import 'react-quill-new/dist/quill.snow.css';
 import { MathfieldElement } from 'mathlive';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<string> {
   const canvas = document.createElement('canvas');
@@ -101,6 +103,7 @@ import {
   GitFork,
   Layers,
   FolderPlus,
+  Loader2,
 } from 'lucide-react';
 import { useStore } from '../store';
 import type { Question, PaperQuestion, QuestionType, PaperSection, Difficulty } from '../types';
@@ -433,12 +436,13 @@ const CustomToolbar = ({ id = "toolbar" }: { id?: string }) => (
   </div>
 );
 
-function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "toolbar" }: {
+function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "toolbar", onImageClick }: {
   value: string;
   onChange: (val: string) => void;
   placeholder?: string;
   openMathDialog: (onInsert: (latex: string) => void) => void;
   toolbarId?: string;
+  onImageClick?: (imgElement: HTMLImageElement, htmlValue: string, onChange: (newHtml: string) => void) => void;
 }) {
   const quillRef = useRef<ReactQuill>(null);
   const [showTableDialog, setShowTableDialog] = useState(false);
@@ -478,8 +482,15 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
     table: true
   }), [toolbarId, openMathDialog]);
 
+  const handleEditorClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'IMG' && onImageClick) {
+      onImageClick(target as HTMLImageElement, value, onChange);
+    }
+  };
+
   return (
-    <div className="rich-editor-wrapper">
+    <div className="rich-editor-wrapper" onClick={handleEditorClick}>
       <CustomToolbar id={toolbarId} />
       <ReactQuill
         ref={quillRef}
@@ -556,6 +567,7 @@ export default function Editor() {
 
   const paper = questionPapers.find(qp => qp.id === id);
   const [selectedPQId, setSelectedPQId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [suggestedSearch, setSuggestedSearch] = useState('');
@@ -602,21 +614,172 @@ export default function Editor() {
   const mathFieldRef = useRef<any>(null);
 
   const [editingImage, setEditingImage] = useState<{
-    src: string;
-    questionId: string;
-    isOption: boolean;
-    optionIndex?: number;
-    originalHtml: string;
-    width: number;
-    height: number;
-    top: number;
-    left: number;
     imgElement: HTMLImageElement;
+    originalHtml: string;
+    originalWidth: number;
+    contextSelector: string;
+    onApply: (newHtml: string) => Promise<void> | void;
   } | null>(null);
+  const [imageOverlayRect, setImageOverlayRect] = useState<{ top: number; left: number; width: number; height: number; clipTop: number; clipBottom: number; clipLeft: number; clipRight: number } | null>(null);
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [showCropModal, setShowCropModal] = useState(false);
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const imgRef = useRef<HTMLImageElement>(null);
-  const [imageResizeWidth, setImageResizeWidth] = useState<number>(0);
+
+  // Update overlay rect when editingImage changes or on scroll/resize
+  useEffect(() => {
+    if (!editingImage) { setImageOverlayRect(null); return; }
+
+    const update = () => {
+      let el = editingImage.imgElement;
+      // React re-renders (like FullQuill recreating or dangerouslySetInnerHTML refreshing) 
+      // can cause the img element to detach. Reconnect it!
+      if (!document.body.contains(el)) {
+        const candidates = Array.from(document.querySelectorAll(`${editingImage.contextSelector} img[src="${el.src}"]`)) as HTMLImageElement[];
+        const newEl = candidates.find(c => !c.closest('.measurement-container'));
+
+        if (newEl) {
+          el = newEl;
+          // Update the state reference so handleMouseMove gets the right element too
+          editingImage.imgElement = el;
+        } else {
+          // Image was permanently removed from DOM
+          setImageOverlayRect(null);
+          setEditingImage(null);
+          return;
+        }
+      }
+
+      el.style.outline = '2px solid var(--accent)';
+
+      const rect = el.getBoundingClientRect();
+      const scrollParent = el.closest('.modal-content, .editor-content-area, .paper-preview-scroll, .editor-canvas');
+      let clipTop = 0; let clipBottom = window.innerHeight; let clipLeft = 0; let clipRight = window.innerWidth;
+
+      if (scrollParent) {
+        const pRect = scrollParent.getBoundingClientRect();
+        clipTop = pRect.top;
+        clipBottom = pRect.bottom;
+        clipLeft = pRect.left;
+        clipRight = pRect.right;
+      }
+
+      // Safety check: if width/height are 0, it means it's hidden or not rendered
+      if (rect.width === 0 || rect.height === 0) {
+        setImageOverlayRect(null);
+        return;
+      }
+
+      setImageOverlayRect({ top: rect.top, left: rect.left, width: rect.width, height: rect.height, clipTop, clipBottom, clipLeft, clipRight });
+    };
+
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      if (editingImage?.imgElement && document.body.contains(editingImage.imgElement)) {
+        editingImage.imgElement.style.outline = '';
+      }
+      window.removeEventListener('scroll', update, true); window.removeEventListener('resize', update);
+    };
+  }, [editingImage]);
+
+  // Global mouse handlers for corner drag resize
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current || !editingImage || !imageOverlayRect) return;
+      e.preventDefault();
+      const delta = e.clientX - resizeRef.current.startX;
+      let newWidth = Math.max(30, resizeRef.current.startWidth + delta);
+      // Clamp to parent container width
+      const parent = editingImage.imgElement.parentElement;
+      if (parent) {
+        const parentWidth = parent.getBoundingClientRect().width;
+        newWidth = Math.min(newWidth, parentWidth);
+      }
+      editingImage.imgElement.style.width = `${newWidth}px`;
+      editingImage.imgElement.style.height = 'auto';
+      const rect = editingImage.imgElement.getBoundingClientRect();
+      setImageOverlayRect({
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        clipTop: imageOverlayRect.clipTop,
+        clipBottom: imageOverlayRect.clipBottom,
+        clipLeft: imageOverlayRect.clipLeft,
+        clipRight: imageOverlayRect.clipRight
+      });
+    };
+    const handleMouseUp = () => {
+      if (resizeRef.current) resizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
+  }, [editingImage, imageOverlayRect]);
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!editingImage) return;
+    resizeRef.current = { startX: e.clientX, startWidth: editingImage.imgElement.getBoundingClientRect().width };
+    document.body.style.cursor = 'nwse-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const applyImageEdit = useCallback(async (newSrc?: string) => {
+    if (!editingImage) return;
+    const currentWidth = editingImage.imgElement.getBoundingClientRect().width;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(editingImage.originalHtml, 'text/html');
+    const imgs = doc.querySelectorAll('img');
+    const targetSrc = editingImage.imgElement.getAttribute('src');
+
+    imgs.forEach(img => {
+      if (img.getAttribute('src') === targetSrc || img.src === editingImage.imgElement.src) {
+        if (newSrc && typeof newSrc === 'string') img.src = newSrc;
+        const w = Math.round(currentWidth);
+        img.style.width = `${w}px`;
+        img.setAttribute('width', `${w}`);
+      }
+    });
+    await editingImage.onApply(doc.body.innerHTML);
+    setEditingImage(null);
+  }, [editingImage]);
+
+
+  // Click outside to apply edit and dismiss orange border
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        editingImage &&
+        target !== editingImage.imgElement &&
+        !target.closest('.rnd-handle') &&
+        !target.closest('.crop-btn') &&
+        !target.closest('.ReactModalPortal') // Crop modal
+      ) {
+        // e.preventDefault() here might break legitimate clicks, so we just passively save
+        applyImageEdit();
+      }
+    };
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [editingImage, applyImageEdit]);
+
+  const handleQuillImageClick = useCallback((imgElement: HTMLImageElement, htmlValue: string, onChange: (newHtml: string) => void) => {
+    setEditingImage({
+      imgElement,
+      originalHtml: htmlValue,
+      originalWidth: imgElement.getBoundingClientRect().width,
+      contextSelector: '.rich-editor-wrapper',
+      onApply: (newHtml) => onChange(newHtml),
+    });
+  }, []);
 
   // Track MathLive virtual keyboard visibility
   useEffect(() => {
@@ -1033,12 +1196,12 @@ export default function Editor() {
     setDraftDifficulty(q.difficulty || 'medium');
     setDraftTypeHeader(q.typeHeader || '');
     setQParentId(pq.parentId || '');
-    
+
     // Load existing subquestions
     const children = paperQuestionsList
       .filter(childPq => childPq.parentId === pq.id)
       .sort((a, b) => a.orderIndex - b.orderIndex);
-      
+
     const loadedSubqs: DraftSubquestion[] = children.map(childPq => {
       const childQ = questions.find(q => q.id === childPq.questionId);
       const childOpts = childQ?.options || [];
@@ -1055,7 +1218,7 @@ export default function Editor() {
       };
     });
     setDraftSubquestions(loadedSubqs);
-    
+
     setSelectedPQId(null);
   };
 
@@ -1131,8 +1294,65 @@ export default function Editor() {
     showToastMessage('Question deleted from bank');
   };
 
-  const exportPDF = () => {
-    window.print();
+  const exportPDF = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    showToastMessage('Generating PDF...');
+
+    try {
+      if (window.MathJax?.typesetPromise) {
+        await window.MathJax.typesetPromise();
+      }
+
+      const paperElement = document.getElementById('printable-paper');
+      if (!paperElement) throw new Error('Paper container not found');
+
+      // Temporarily hide UI elements that shouldn't be printed
+      paperElement.classList.add('preview-active');
+
+      const canvas = await html2canvas(paperElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        windowWidth: paperElement.scrollWidth,
+        windowHeight: paperElement.scrollHeight,
+      });
+
+      paperElement.classList.remove('preview-active');
+
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+
+      // A4 dimensions in mm
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Add first page
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Add subsequent pages if content overflows A4 height
+      while (heightLeft >= 0) {
+        position = position - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`${paper.title || 'Paper'}.pdf`);
+      showToastMessage('PDF Downloaded!');
+    } catch (err) {
+      console.error('PDF Export Error:', err);
+      showToastMessage('Failed to export PDF');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   if (!paper) {
@@ -1294,52 +1514,7 @@ export default function Editor() {
     </div>
   );
 
-  const handleCanvasClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'IMG' && !target.classList.contains('logo-print-only') && !target.closest('.rnd-handle')) {
-      const qWrapper = target.closest('.rendered-question-item');
-      if (qWrapper) {
-        const questionId = qWrapper.getAttribute('data-question-id');
-        if (questionId) {
-          const qOption = target.closest('.q-option');
-          const isOption = !!qOption;
-          let optionIndex: number | undefined;
-          if (isOption) {
-            optionIndex = parseInt(qOption.getAttribute('data-option-index') || '0', 10);
-          }
 
-          const q = questions.find(qu => qu.id === questionId);
-          if (q) {
-            const paperContainer = target.closest('.paper-container') as HTMLElement;
-            if (!paperContainer) return;
-
-            const containerRect = paperContainer.getBoundingClientRect();
-            const imgRect = target.getBoundingClientRect();
-
-            const originalHtml = isOption ? (q.options ? q.options[optionIndex!] : '') : q.content;
-
-            (target as HTMLImageElement).style.opacity = '0';
-
-            setEditingImage({
-              src: (target as HTMLImageElement).src,
-              questionId,
-              isOption,
-              optionIndex,
-              originalHtml,
-              width: imgRect.width,
-              height: imgRect.height,
-              top: imgRect.top - containerRect.top,
-              left: imgRect.left - containerRect.left,
-              imgElement: target as HTMLImageElement
-            });
-            setImageResizeWidth(imgRect.width);
-            setCrop(undefined);
-            setCompletedCrop(undefined);
-          }
-        }
-      }
-    }
-  };
 
   return (
     <div className="editor-layout">
@@ -1364,15 +1539,16 @@ export default function Editor() {
           <button className="toolbar-btn-accent" onClick={() => { setIsConstructorOpen(true); setActiveView('tree'); }}>
             <Layers size={14} /> Edit/View Questions
           </button>
-          <button className="toolbar-btn-accent" onClick={exportPDF}>
-            <Download size={14} /> Export PDF
+          <button className="toolbar-btn-accent" onClick={exportPDF} disabled={isExporting}>
+            {isExporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+            {isExporting ? 'Generating...' : 'Export PDF'}
           </button>
         </div>
       </div>
 
       {/* CENTER - Clean HTML Paper (WYSIWYG) */}
       <div className="editor-canvas">
-        <div className="paper-container" ref={paperRef} id="printable-paper" onClick={handleCanvasClick}>
+        <div className="paper-container" ref={paperRef} id="printable-paper">
           {/* Hidden measurement container */}
           <div
             ref={measureRef}
@@ -1451,87 +1627,103 @@ export default function Editor() {
           <div className="print-footer">Created using PaperForm</div>
           <div className="print-spacer" />
 
-          {editingImage && (
-            <div style={{
-              position: 'absolute',
-              top: editingImage.top,
-              left: editingImage.left,
-              zIndex: 1000,
-              background: 'rgba(255,255,255,0.9)',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-              borderRadius: 4,
-              padding: 4,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 8
-            }} onClick={(e) => e.stopPropagation()}>
-              <ReactCrop
-                crop={crop}
-                onChange={(c) => setCrop(c)}
-                onComplete={(c) => setCompletedCrop(c)}
+          {/* Inline image resize handles */}
+          {editingImage && imageOverlayRect && (
+            <>
+              {/* Corner handles */}
+              {['nw', 'ne', 'sw', 'se'].map(corner => {
+                const isRight = corner.includes('e');
+                const isBottom = corner.includes('s');
+                const top = isBottom ? imageOverlayRect.top + imageOverlayRect.height - 5 : imageOverlayRect.top - 5;
+                const left = isRight ? imageOverlayRect.left + imageOverlayRect.width - 5 : imageOverlayRect.left - 5;
+
+                // Don't render handle if it's outside the scroll container's bounds
+                if (top < imageOverlayRect.clipTop || top > imageOverlayRect.clipBottom || left < imageOverlayRect.clipLeft || left > imageOverlayRect.clipRight) {
+                  return null;
+                }
+
+                return (
+                  <div
+                    key={corner}
+                    onMouseDown={startResize}
+                    style={{
+                      position: 'fixed',
+                      top,
+                      left,
+                      width: 10,
+                      height: 10,
+                      background: 'var(--accent)',
+                      border: '2px solid white',
+                      borderRadius: 2,
+                      cursor: (corner === 'nw' || corner === 'se') ? 'nwse-resize' : 'nesw-resize',
+                      zIndex: 1001,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                    }}
+                  />
+                );
+              })}
+
+              {/* Inline crop button top right of the image */}
+              <button
+                className="crop-btn"
+                style={{
+                  position: 'fixed',
+                  top: Math.max(imageOverlayRect.clipTop + 8, imageOverlayRect.top + 8),
+                  left: Math.min(imageOverlayRect.clipRight - 65, imageOverlayRect.left + imageOverlayRect.width - 65), // ~65px width
+                  background: 'white',
+                  border: '1px solid #e5e7eb',
+                  cursor: 'pointer',
+                  color: '#6B7280',
+                  fontSize: 12,
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                  zIndex: 1001,
+                  opacity: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 0 : 1,
+                  pointerEvents: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 'none' : 'auto'
+                }}
+                onClick={(e) => { e.stopPropagation(); setShowCropModal(true); }}
+                title="Crop Image"
               >
-                <img
-                  ref={imgRef}
-                  src={editingImage.src}
-                  alt="Crop preview"
-                  style={{ width: imageResizeWidth > 0 ? imageResizeWidth : 'auto', height: 'auto', display: 'block', maxWidth: '100%' }}
-                />
-              </ReactCrop>
+                ✂ Crop
+              </button>
+            </>
+          )}
 
-              <div style={{ display: 'flex', gap: 8, width: '100%', justifyContent: 'center', alignItems: 'center', padding: '4px 8px' }}>
-                <span style={{ fontSize: 12, color: '#666', fontWeight: 600 }}>Width:</span>
-                <input
-                  type="number"
-                  style={{ width: 60, padding: 4, border: '1px solid #ccc', borderRadius: 4, fontSize: 12 }}
-                  value={Math.round(imageResizeWidth)}
-                  onChange={(e) => setImageResizeWidth(Number(e.target.value))}
-                />
-                <span style={{ fontSize: 12, color: '#666' }}>px</span>
-
-                <button style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', color: '#EF4444', display: 'flex', alignItems: 'center' }} onClick={() => {
-                  if (editingImage.imgElement) editingImage.imgElement.style.opacity = '1';
-                  setEditingImage(null);
-                }} title="Cancel">
-                  ✕
-                </button>
-                <button style={{ background: '#10B981', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 4 }} onClick={async () => {
-                  let newSrc = editingImage.src;
-                  if (completedCrop && completedCrop.width > 0 && completedCrop.height > 0 && imgRef.current) {
-                    newSrc = await getCroppedImg(imgRef.current, completedCrop);
-                  }
-
-                  const parser = new DOMParser();
-                  const doc = parser.parseFromString(editingImage.originalHtml, 'text/html');
-                  const imgs = doc.querySelectorAll('img');
-                  imgs.forEach(img => {
-                    if (img.getAttribute('src') === editingImage.src || img.src === editingImage.src) {
-                      img.src = newSrc;
-                      if (imageResizeWidth > 0) {
-                        img.style.width = `${imageResizeWidth}px`;
-                      }
+          {/* Crop modal — only shown when user clicks Crop */}
+          {showCropModal && editingImage && (
+            <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={() => setShowCropModal(false)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600, padding: 16 }}>
+                <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>Crop Image</h3>
+                <div style={{ maxHeight: '65vh', overflow: 'auto', background: '#f9fafb', borderRadius: 8, display: 'flex', justifyContent: 'center' }}>
+                  <ReactCrop
+                    crop={crop}
+                    onChange={(c) => setCrop(c)}
+                    onComplete={(c) => setCompletedCrop(c)}
+                  >
+                    <img
+                      ref={imgRef}
+                      src={editingImage.imgElement.src}
+                      alt="Crop preview"
+                      style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}
+                    />
+                  </ReactCrop>
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                  <button className="btn btn-secondary" onClick={() => { setShowCropModal(false); setCrop(undefined); setCompletedCrop(undefined); }}>Cancel</button>
+                  <button className="btn btn-primary" onClick={async () => {
+                    if (completedCrop && completedCrop.width > 0 && completedCrop.height > 0 && imgRef.current) {
+                      const croppedSrc = await getCroppedImg(imgRef.current, completedCrop);
+                      await applyImageEdit(croppedSrc);
                     }
-                  });
-                  const newHtml = doc.body.innerHTML;
-
-                  if (editingImage.isOption && editingImage.optionIndex !== undefined) {
-                    const q = questions.find(q => q.id === editingImage.questionId);
-                    if (q) {
-                      const newOptions = [...(q.options || [])];
-                      newOptions[editingImage.optionIndex] = newHtml;
-                      await updateQuestion(q.id, { options: newOptions });
-                    }
-                  } else {
-                    await updateQuestion(editingImage.questionId, { content: newHtml });
-                  }
-
-                  if (editingImage.imgElement) editingImage.imgElement.style.opacity = '1';
-                  setEditingImage(null);
-                  setCrop(undefined);
-                  setCompletedCrop(undefined);
-                }}>
-                  ✓ Apply
-                </button>
+                    setShowCropModal(false);
+                    setCrop(undefined);
+                    setCompletedCrop(undefined);
+                  }}>Apply Crop</button>
+                </div>
               </div>
             </div>
           )}
@@ -1700,7 +1892,7 @@ export default function Editor() {
                               <span className="tree-section-stat">{sectionTotalM} marks</span>
                             </div>
                           </div>
-                          
+
                         </div>
 
                         <div className="tree-section-body">
@@ -1911,7 +2103,7 @@ export default function Editor() {
 
                   <div className="property-field" style={{ marginBottom: 15 }}>
                     <label className="property-label">Question Content</label>
-                    <FullQuill value={draftContent} onChange={setDraftContent} placeholder="Enter your question..." openMathDialog={openMathDialog} toolbarId="question-toolbar" />
+                    <FullQuill value={draftContent} onChange={setDraftContent} placeholder="Enter your question..." openMathDialog={openMathDialog} toolbarId="question-toolbar" onImageClick={handleQuillImageClick} />
                   </div>
 
                   {draftType === 'mcq' && (
@@ -1927,7 +2119,7 @@ export default function Editor() {
                               </button>
                             )}
                           </div>
-                          <FullQuill value={opt} onChange={(val) => { const newOpts = [...draftOptions]; newOpts[i] = val; setDraftOptions(newOpts); }} placeholder={`Option ${String.fromCharCode(65 + i)}`} openMathDialog={openMathDialog} toolbarId={`option-toolbar-${i}`} />
+                          <FullQuill value={opt} onChange={(val) => { const newOpts = [...draftOptions]; newOpts[i] = val; setDraftOptions(newOpts); }} placeholder={`Option ${String.fromCharCode(65 + i)}`} openMathDialog={openMathDialog} toolbarId={`option-toolbar-${i}`} onImageClick={handleQuillImageClick} />
                         </div>
                       ))}
                       <button className="btn btn-secondary" onClick={handleAddOption} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}>
@@ -1936,90 +2128,90 @@ export default function Editor() {
                     </div>
                   )}
 
-                  <div style={{ 
-                    marginTop: 20, 
-                    paddingLeft: 16, 
-                    borderLeft: '2px solid var(--border-color)', 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    gap: 12 
+                  <div style={{
+                    marginTop: 20,
+                    paddingLeft: 16,
+                    borderLeft: '2px solid var(--border-color)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12
                   }}>
-                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                       <label className="property-label" style={{ marginBottom: 0 }}>
-                         Subquestions {draftSubquestions.length > 0 ? `(${draftSubquestions.length})` : ''}
-                       </label>
-                     </div>
-                     
-                     {draftSubquestions.map((sq, index) => (
-                       <div key={sq.id} style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 8, position: 'relative', overflow: 'hidden' }}>
-                         <div 
-                           onClick={() => handleUpdateDraftSubquestion(sq.id, 'isExpanded', !sq.isExpanded)}
-                           style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', backgroundColor: sq.isExpanded ? 'var(--bg-tertiary)' : 'transparent', borderBottom: sq.isExpanded ? '1px solid var(--border-color)' : 'none' }}
-                         >
-                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, overflow: 'hidden' }}>
-                             {sq.isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                             <span style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Subquestion {index + 1}</span>
-                             {!sq.isExpanded && sq.content && (
-                               <span style={{ fontSize: 13, color: 'var(--text-tertiary)', marginLeft: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
-                                 {sq.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ') || 'Empty question'}
-                               </span>
-                             )}
-                           </div>
-                           <button className="hover-action-btn danger" onClick={(e) => { e.stopPropagation(); handleRemoveDraftSubquestion(sq.id); }} style={{ marginLeft: 10 }}>
-                             <Trash2 size={14} />
-                           </button>
-                         </div>
-                         
-                         {sq.isExpanded && (
-                           <div style={{ padding: '15px' }}>
-                             <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                               <div className="property-field" style={{ flex: 1, marginBottom: 0 }}>
-                                 <label className="property-label">Question Type</label>
-                                 <select className="property-input" value={sq.type} onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'type', e.target.value)}>
-                                   <option value="subjective">Subjective</option>
-                                   <option value="mcq">Multiple Choice</option>
-                                 </select>
-                               </div>
-                               <div className="property-field" style={{ flex: 1, marginBottom: 0 }}>
-                                 <label className="property-label">Marks</label>
-                                 <input type="number" className="property-input" value={sq.marks} onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'marks', parseInt(e.target.value) || 1)} min={1} />
-                               </div>
-                             </div>
-                             
-                             <div className="property-field" style={{ marginBottom: sq.type === 'mcq' ? 12 : 0 }}>
-                               <label className="property-label">Question Content</label>
-                               <FullQuill value={sq.content} onChange={(val) => handleUpdateDraftSubquestion(sq.id, 'content', val)} placeholder="Enter subquestion..." openMathDialog={openMathDialog} toolbarId={`subq-toolbar-${sq.id}`} />
-                             </div>
-                             
-                             {sq.type === 'mcq' && (
-                               <div className="property-field" style={{ marginBottom: 0 }}>
-                                 <label className="property-label">Options</label>
-                                 {sq.options.map((opt, i) => (
-                                   <div key={i} style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                                     <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16 }}>{String.fromCharCode(65 + i)}</span>
-                                     <div style={{ flex: 1 }}>
-                                       <FullQuill value={opt} onChange={(val) => {
-                                         const newOpts = [...sq.options];
-                                         newOpts[i] = val;
-                                         handleUpdateDraftSubquestion(sq.id, 'options', newOpts);
-                                       }} placeholder={`Option ${String.fromCharCode(65 + i)}`} openMathDialog={openMathDialog} toolbarId={`subq-opt-toolbar-${sq.id}-${i}`} />
-                                     </div>
-                                   </div>
-                                 ))}
-                               </div>
-                             )}
-                           </div>
-                         )}
-                       </div>
-                     ))}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <label className="property-label" style={{ marginBottom: 0 }}>
+                        Subquestions {draftSubquestions.length > 0 ? `(${draftSubquestions.length})` : ''}
+                      </label>
+                    </div>
 
-                     <button 
-                       className="btn btn-secondary" 
-                       style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }} 
-                       onClick={handleAddDraftSubquestion}
-                     >
-                       <Plus size={14} /> Add Subquestion
-                     </button>
+                    {draftSubquestions.map((sq, index) => (
+                      <div key={sq.id} style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 8, position: 'relative', overflow: 'hidden' }}>
+                        <div
+                          onClick={() => handleUpdateDraftSubquestion(sq.id, 'isExpanded', !sq.isExpanded)}
+                          style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', backgroundColor: sq.isExpanded ? 'var(--bg-tertiary)' : 'transparent', borderBottom: sq.isExpanded ? '1px solid var(--border-color)' : 'none' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, overflow: 'hidden' }}>
+                            {sq.isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            <span style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Subquestion {index + 1}</span>
+                            {!sq.isExpanded && sq.content && (
+                              <span style={{ fontSize: 13, color: 'var(--text-tertiary)', marginLeft: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                                {sq.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ') || 'Empty question'}
+                              </span>
+                            )}
+                          </div>
+                          <button className="hover-action-btn danger" onClick={(e) => { e.stopPropagation(); handleRemoveDraftSubquestion(sq.id); }} style={{ marginLeft: 10 }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        {sq.isExpanded && (
+                          <div style={{ padding: '15px' }}>
+                            <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                              <div className="property-field" style={{ flex: 1, marginBottom: 0 }}>
+                                <label className="property-label">Question Type</label>
+                                <select className="property-input" value={sq.type} onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'type', e.target.value)}>
+                                  <option value="subjective">Subjective</option>
+                                  <option value="mcq">Multiple Choice</option>
+                                </select>
+                              </div>
+                              <div className="property-field" style={{ flex: 1, marginBottom: 0 }}>
+                                <label className="property-label">Marks</label>
+                                <input type="number" className="property-input" value={sq.marks} onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'marks', parseInt(e.target.value) || 1)} min={1} />
+                              </div>
+                            </div>
+
+                            <div className="property-field" style={{ marginBottom: sq.type === 'mcq' ? 12 : 0 }}>
+                              <label className="property-label">Question Content</label>
+                              <FullQuill value={sq.content} onChange={(val) => handleUpdateDraftSubquestion(sq.id, 'content', val)} placeholder="Enter subquestion..." openMathDialog={openMathDialog} toolbarId={`subq-toolbar-${sq.id}`} onImageClick={handleQuillImageClick} />
+                            </div>
+
+                            {sq.type === 'mcq' && (
+                              <div className="property-field" style={{ marginBottom: 0 }}>
+                                <label className="property-label">Options</label>
+                                {sq.options.map((opt, i) => (
+                                  <div key={i} style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16 }}>{String.fromCharCode(65 + i)}</span>
+                                    <div style={{ flex: 1 }}>
+                                      <FullQuill value={opt} onChange={(val) => {
+                                        const newOpts = [...sq.options];
+                                        newOpts[i] = val;
+                                        handleUpdateDraftSubquestion(sq.id, 'options', newOpts);
+                                      }} placeholder={`Option ${String.fromCharCode(65 + i)}`} openMathDialog={openMathDialog} toolbarId={`subq-opt-toolbar-${sq.id}-${i}`} onImageClick={handleQuillImageClick} />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      className="btn btn-secondary"
+                      style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+                      onClick={handleAddDraftSubquestion}
+                    >
+                      <Plus size={14} /> Add Subquestion
+                    </button>
                   </div>
                 </div>
               )}
@@ -2151,6 +2343,7 @@ export default function Editor() {
                   placeholder="Enter instructions..."
                   openMathDialog={openMathDialog}
                   toolbarId="instructions-toolbar"
+                  onImageClick={handleQuillImageClick}
                 />
               </div>
             </div>

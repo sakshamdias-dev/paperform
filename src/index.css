@@ -3589,6 +3589,19 @@ math-field::part(virtual-keyboard-toggle) {
   display: table-cell !important;
 }
 
+.ql-editor img {
+  max-width: 100% !important;
+  height: auto !important;
+  cursor: pointer;
+}
+
+.q-text img,
+.q-option img {
+  max-width: 100% !important;
+  height: auto !important;
+  cursor: pointer;
+}
+
 .bank-action-icon {
   transition: transform 0.2s ease, color 0.2s ease;
   padding: 4px;
@@ -4031,4 +4044,15 @@ math-virtual-keyboard,
   color: var(--text-muted);
   font-size: 13px;
   font-style: italic;
+}
+
+.q-text, .q-option {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.q-text p, .q-option p {
+  margin: 0;
+}
+.q-text *, .q-option * {
+  max-width: 100%;
 }
