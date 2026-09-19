@@ -724,7 +724,7 @@ export const useStore = create<AppState>()((set, get) => ({
           id: pqId,
           paperId,
           questionId,
-          section: section || 'A',
+          section: section ?? '',
           parentId,
           marks: marks || 1,
           orderIndex,
@@ -764,16 +764,16 @@ export const useStore = create<AppState>()((set, get) => ({
           id: pqId,
           paper_id: paperId,
           question_id: questionId,
-          section: section || 'A',
+          section: section ?? '',
           parent_id: parentId,
           marks: marks || 1,
           order_index: orderIndex,
         });
         if (pqError) {
-          console.error('Failed to insert paper_question:', pqError.message);
+          console.error('Error inserting paper_question:', pqError);
         }
 
-        return questionId;
+        return pqId;
       },
     }),
 );

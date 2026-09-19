@@ -58,6 +58,7 @@ export interface HeaderConfig {
   logoPos?: { x: number; y: number };
   barcodePos?: { x: number; y: number };
   showBarcode?: boolean;
+  customSections?: string[];
 }
 
 export interface QuestionPaper {

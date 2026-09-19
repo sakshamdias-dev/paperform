@@ -2350,8 +2350,7 @@ textarea::placeholder {
 .q-text {
   line-height: 1.7;
   white-space: normal;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
+  overflow-wrap: normal;
   word-break: normal;
 }
 
@@ -3892,9 +3891,9 @@ math-virtual-keyboard,
   font-weight: 500;
   color: var(--text-primary);
   line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .tree-node-text p {
