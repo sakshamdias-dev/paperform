@@ -2128,9 +2128,9 @@ textarea::placeholder {
 /* Clean rendered question (WYSIWYG) */
 .rendered-question-item {
   position: relative;
-  padding: 10px 0 16px 0;
+  padding: 12px 16px 16px 16px;
   margin-bottom: 12px;
-  border-radius: 0;
+  border-radius: 6px;
   border: none !important;
   cursor: default;
   transition: all 0.2s ease;
@@ -2141,7 +2141,7 @@ textarea::placeholder {
 }
 
 .rendered-question-item:first-child {
-  padding-top: 4px !important;
+  padding-top: 6px !important;
 }
 
 @media print {
@@ -2349,7 +2349,7 @@ textarea::placeholder {
 
 .q-text {
   line-height: 1.7;
-  white-space: normal;
+  white-space: pre-wrap;
   overflow-wrap: normal;
   word-break: normal;
 }
@@ -3904,7 +3904,7 @@ math-virtual-keyboard,
   font-weight: 500;
   color: var(--text-primary);
   line-height: 1.4;
-  white-space: normal;
+  white-space: pre-wrap;
   word-break: normal;
   overflow-wrap: normal;
 }
@@ -4047,7 +4047,7 @@ math-virtual-keyboard,
 }
 
 .q-text, .q-option {
-  word-break: break-word;
+  word-break: normal;
   overflow-wrap: break-word;
 }
 .q-text p, .q-option p {

@@ -262,13 +262,13 @@ function SortableQuestion({
               </span>
             )}
             <div className="q-content-wrapper" style={{ flex: 1, minWidth: 0 }}>
-              <div className="q-text" dangerouslySetInnerHTML={{ __html: question.content }} />
+              <div className="q-text" dangerouslySetInnerHTML={{ __html: (question.content || '').replace(/&nbsp;/g, ' ') }} />
               {question.questionType === 'mcq' && question.options && question.options.length > 0 && (
                 <div className={`q-options q-options-${mcqLayout}`}>
                   {question.options.map((opt, i) => (
                     <span key={i} className="q-option" data-option-index={i} style={{ display: 'inline-flex', alignItems: 'flex-start' }}>
                       <span style={{ marginRight: '4px' }}>{String.fromCharCode(65 + i)}.</span>
-                      <span dangerouslySetInnerHTML={{ __html: opt }} />
+                      <span dangerouslySetInnerHTML={{ __html: (opt || '').replace(/&nbsp;/g, ' ') }} />
                     </span>
                   ))}
                 </div>
@@ -344,13 +344,13 @@ function SortableQuestion({
                           <span className="q-number" style={{ fontSize: '0.85em', minWidth: 24 }}>{label}</span>
                         )}
                         <div className="q-content-wrapper" style={{ flex: 1, minWidth: 0 }}>
-                          <div className="q-text" dangerouslySetInnerHTML={{ __html: node.question.content }} />
+                          <div className="q-text" dangerouslySetInnerHTML={{ __html: (node.question.content || '').replace(/&nbsp;/g, ' ') }} />
                           {node.question.questionType === 'mcq' && node.question.options && node.question.options.length > 0 && (
                             <div className={`q-options q-options-${subMcqLayout}`}>
                               {node.question.options.map((opt, oi) => (
                                 <span key={oi} className="q-option" style={{ display: 'inline-flex', alignItems: 'flex-start' }}>
                                   <span style={{ marginRight: '4px' }}>{String.fromCharCode(65 + oi)}.</span>
-                                  <span dangerouslySetInnerHTML={{ __html: opt }} />
+                                  <span dangerouslySetInnerHTML={{ __html: (opt || '').replace(/&nbsp;/g, ' ') }} />
                                 </span>
                               ))}
                             </div>
@@ -1923,7 +1923,7 @@ export default function Editor() {
                                       </div>
 
                                       <div className="tree-node-content">
-                                        <div className="tree-node-text" dangerouslySetInnerHTML={{ __html: node.text || '<em>Empty</em>' }} />
+                                        <div className="tree-node-text" dangerouslySetInnerHTML={{ __html: (node.text || '<em>Empty</em>').replace(/&nbsp;/g, ' ') }} />
                                         <div className="tree-node-meta">
                                           <span className="tree-node-pill marks">
                                             <strong>{node.marks}</strong> marks
