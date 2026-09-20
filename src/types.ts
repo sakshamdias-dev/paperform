@@ -59,6 +59,7 @@ export interface HeaderConfig {
   barcodePos?: { x: number; y: number };
   showBarcode?: boolean;
   customSections?: string[];
+  continuousNumbering?: boolean;
 }
 
 export interface QuestionPaper {

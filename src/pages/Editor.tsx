@@ -1044,6 +1044,25 @@ export default function Editor() {
 
   const handleAddDraftToPaper = async () => {
     if (!id || !draftType || !draftContent.trim()) return;
+
+    if (paper?.maxMarks) {
+      let proposedTotal = totalMarks;
+      if (editingQuestionId && editingPQId) {
+        const oldPQ = paperQuestionsList.find(pq => pq.id === editingPQId);
+        if (oldPQ && !oldPQ.parentId) {
+          proposedTotal = proposedTotal - oldPQ.marks + draftMarks;
+        }
+      } else {
+        if (!qParentId) {
+          proposedTotal += draftMarks;
+        }
+      }
+      if (proposedTotal > paper.maxMarks) {
+        window.alert(`Error: Total marks (${proposedTotal}) cannot exceed the maximum marks provided in the paper settings (${paper.maxMarks}).`);
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const options = draftType === 'mcq' ? draftOptions.filter(o => o.trim()) : [];
@@ -1231,7 +1250,7 @@ export default function Editor() {
 
 
   const totalMarks = useMemo(() => {
-    return paperQuestionsList.reduce((sum, pq) => sum + pq.marks, 0);
+    return paperQuestionsList.filter(pq => !pq.parentId).reduce((sum, pq) => sum + pq.marks, 0);
   }, [paperQuestionsList]);
 
   const suggestedQuestions = useMemo(() => {
@@ -1261,6 +1280,12 @@ export default function Editor() {
 
   const handleAddSuggested = async (questionId: string) => {
     if (!id) return;
+
+    if (paper?.maxMarks && (totalMarks + 1 > paper.maxMarks)) {
+      window.alert(`Error: Total marks (${totalMarks + 1}) cannot exceed the maximum marks provided in the paper settings (${paper.maxMarks}).`);
+      return;
+    }
+
     const q = questions.find(q => q.id === questionId);
     if (!q) return;
     setSaving(true);
@@ -1297,11 +1322,12 @@ export default function Editor() {
   const exportPDF = async () => {
     if (isExporting) return;
     setIsExporting(true);
-    showToastMessage('Generating PDF...');
+    showToastMessage('Opening print dialog...');
 
     try {
-      if (window.MathJax?.typesetPromise) {
-        await window.MathJax.typesetPromise();
+      const originalTitle = document.title;
+      if (paper?.title) {
+        document.title = paper.title;
       }
 
       const paperElement = document.getElementById('printable-paper');
@@ -1310,46 +1336,21 @@ export default function Editor() {
       // Temporarily hide UI elements that shouldn't be printed
       paperElement.classList.add('preview-active');
 
-      const canvas = await html2canvas(paperElement, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        windowWidth: paperElement.scrollWidth,
-        windowHeight: paperElement.scrollHeight,
-      });
-
-      paperElement.classList.remove('preview-active');
-
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
-
-      // A4 dimensions in mm
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-
-      const imgWidth = pdfWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      // Add first page
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pdfHeight;
-
-      // Add subsequent pages if content overflows A4 height
-      while (heightLeft >= 0) {
-        position = position - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pdfHeight;
+      if (window.MathJax?.typesetPromise) {
+        await window.MathJax.typesetPromise();
       }
 
-      pdf.save(`${paper?.title || 'Paper'}.pdf`);
-      showToastMessage('PDF Downloaded!');
+      // Wait a brief moment for layout recalculation and math rendering
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      window.print();
+
+      paperElement.classList.remove('preview-active');
+      document.title = originalTitle;
+      
     } catch (err) {
-      console.error('PDF Export Error:', err);
-      showToastMessage('Failed to export PDF');
+      console.error('Print Error:', err);
+      showToastMessage('Failed to open print dialog');
     } finally {
       setIsExporting(false);
     }
@@ -1392,9 +1393,13 @@ export default function Editor() {
 
       // Question number within its section (top-level only)
       let questionNumber = 1;
-      for (let i = idx - 1; i >= 0; i--) {
-        if (topLevel[i].section !== pq.section) break;
-        questionNumber++;
+      if (paper?.headerConfig?.continuousNumbering) {
+        questionNumber = idx + 1;
+      } else {
+        for (let i = idx - 1; i >= 0; i--) {
+          if (topLevel[i].section !== pq.section) break;
+          questionNumber++;
+        }
       }
 
       const secIdx = showSectionHeader ? distinctSections.indexOf(showSectionHeader) : -1;
@@ -1866,17 +1871,28 @@ export default function Editor() {
               )}
 
               {activeView === 'tree' && sections.length > 0 && (
+                <div style={{ marginBottom: 15, display: 'flex', justifyContent: 'flex-end', padding: '0 20px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                    <input
+                      type="checkbox"
+                      checked={paper?.headerConfig?.continuousNumbering || false}
+                      onChange={(e) => {
+                        if (paper) {
+                          updateQuestionPaper(paper.id, {
+                            headerConfig: { ...paper.headerConfig, continuousNumbering: e.target.checked }
+                          });
+                        }
+                      }}
+                    />
+                    Continuous numbering across sections
+                  </label>
+                </div>
+              )}
+              {activeView === 'tree' && sections.length > 0 && (
                 <div className="tree-view">
                   {sections.map(sec => {
                     const sectionQCount = sec.questions.length;
-                    const sectionTotalM = sec.questions.reduce((sum: number, q: any) => {
-                      const countMarks = (node: any): number => {
-                        let total = node.marks || 0;
-                        if (node.children) node.children.forEach((c: any) => { total += countMarks(c); });
-                        return total;
-                      };
-                      return sum + countMarks(q);
-                    }, 0);
+                    const sectionTotalM = sec.questions.reduce((sum: number, q: any) => sum + (q.marks || 0), 0);
 
                     return (
                       <div key={sec.id} className="tree-section">
