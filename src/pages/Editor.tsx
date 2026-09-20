@@ -22,6 +22,8 @@ import 'react-quill-new/dist/quill.snow.css';
 import { MathfieldElement } from 'mathlive';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 
 async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<string> {
@@ -1333,22 +1335,79 @@ export default function Editor() {
 
       // Temporarily hide UI elements that shouldn't be printed
       paperElement.classList.add('preview-active');
-
-      // @ts-ignore
-      const html2pdf = (await import('html2pdf.js')).default;
       
-      const opt = {
-        margin:       10, // mm
-        filename:     `${paper?.title || 'question-paper'}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false, windowWidth: paperElement.scrollWidth },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-        pagebreak:    { mode: 'css', avoid: ['.clean-question', '.section-divider', '.paper-header-container'] }
-      };
+      // Manual pagination logic to prevent cutting
+      const pxPerPage = 1122.9; // A4 height at 794px width (794 * 297/210)
+      const paperRect = paperElement.getBoundingClientRect();
+      let currentPageEnd = paperRect.top + pxPerPage;
+      
+      const elementsToPaginate = Array.from(paperElement.querySelectorAll('.clean-question, .section-divider, .paper-header')) as HTMLElement[];
+      const originalMargins = new Map<HTMLElement, string>();
+      
+      for (const el of elementsToPaginate) {
+        const rect = el.getBoundingClientRect();
+        
+        if (rect.bottom > currentPageEnd) {
+          const spaceNeeded = currentPageEnd - rect.top;
+          
+          // Only push down if it started on the current page
+          if (spaceNeeded > 0) {
+            originalMargins.set(el, el.style.marginTop);
+            const currentMargin = parseFloat(window.getComputedStyle(el).marginTop) || 0;
+            // Add space to push the element's top to exactly the next page boundary
+            el.style.marginTop = `${currentMargin + spaceNeeded + 1}px`;
+          }
+          
+          // Update page end boundary
+          const newRect = el.getBoundingClientRect();
+          while (newRect.bottom > currentPageEnd) {
+            currentPageEnd += pxPerPage;
+          }
+        }
+      }
 
-      await html2pdf().set(opt).from(paperElement).save();
+      const canvas = await html2canvas(paperElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        windowWidth: paperElement.scrollWidth,
+        windowHeight: paperElement.scrollHeight,
+        scrollY: 0,
+        scrollX: 0
+      });
 
+      // Restore original margins
+      originalMargins.forEach((margin, el) => {
+        el.style.marginTop = margin;
+      });
       paperElement.classList.remove('preview-active');
+
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+
+      // A4 dimensions in mm
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Add first page
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Add subsequent pages
+      while (heightLeft > 0.1) { // 0.1mm tolerance
+        position = position - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`${paper?.title || 'question-paper'}.pdf`);
       showToastMessage('PDF generated successfully!');
     } catch (err) {
       console.error('Print Error:', err);
