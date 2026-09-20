@@ -60,6 +60,8 @@ export interface HeaderConfig {
   showBarcode?: boolean;
   customSections?: string[];
   continuousNumbering?: boolean;
+  fontSize?: number;
+  fontFamily?: string;
 }
 
 export interface QuestionPaper {

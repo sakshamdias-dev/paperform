@@ -1476,28 +1476,46 @@ export default function Editor() {
         </>
       )}
 
-      <Rnd
-        position={paper.headerConfig?.barcodePos || { x: 550, y: 20 }}
-        onDragStop={(_e, d) => { void handleUpdateHeaderConfig({ barcodePos: { x: d.x, y: d.y } }); }}
-        bounds="parent"
-        enableResizing={false}
-        className="no-print-handles"
-      >
-        <div className="barcode-wrapper">
-          <div className="barcode-text">QP Code: {paper.qpCode}</div>
-        </div>
-      </Rnd>
+      {paper.qpCode && (
+        <>
+          <Rnd
+            position={paper.headerConfig?.barcodePos || { x: 550, y: 20 }}
+            onDragStop={(_e, d) => { void handleUpdateHeaderConfig({ barcodePos: { x: d.x, y: d.y } }); }}
+            bounds="parent"
+            enableResizing={false}
+            className="no-print-handles"
+          >
+            <div className="barcode-wrapper" style={{ position: 'relative' }}>
+              <div className="barcode-text">QP Code: {paper.qpCode}</div>
+              <button 
+                onClick={() => updateQuestionPaper(paper.id, { qpCode: '' })}
+                className="hide-on-print"
+                style={{ 
+                  position: 'absolute', top: -10, right: -10, 
+                  background: 'var(--danger-color, #ef4444)', color: 'white', 
+                  borderRadius: '50%', width: 20, height: 20, 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                  border: 'none', cursor: 'pointer', fontSize: 12, padding: 0 
+                }}
+                title="Remove QP Code"
+              >
+                ✕
+              </button>
+            </div>
+          </Rnd>
 
-      <div
-        className="barcode-print-only"
-        style={{
-          position: 'absolute',
-          left: `${paper.headerConfig?.barcodePos?.x || 550}px`,
-          top: `${paper.headerConfig?.barcodePos?.y || 20}px`,
-        }}
-      >
-        <div className="barcode-text">QP Code: {paper.qpCode}</div>
-      </div>
+          <div
+            className="barcode-print-only"
+            style={{
+              position: 'absolute',
+              left: `${paper.headerConfig?.barcodePos?.x || 550}px`,
+              top: `${paper.headerConfig?.barcodePos?.y || 20}px`,
+            }}
+          >
+            <div className="barcode-text">QP Code: {paper.qpCode}</div>
+          </div>
+        </>
+      )}
 
       <h1 className="paper-school-name">{user?.schoolName || 'Institution Name'}</h1>
       <h2 className="paper-exam-title">{paper.title}</h2>
@@ -1552,7 +1570,15 @@ export default function Editor() {
 
       {/* CENTER - Clean HTML Paper (WYSIWYG) */}
       <div className="editor-canvas">
-        <div className="paper-container" ref={paperRef} id="printable-paper">
+        <div 
+          className="paper-container" 
+          ref={paperRef} 
+          id="printable-paper"
+          style={{
+            fontSize: paper.headerConfig?.fontSize ? `${paper.headerConfig.fontSize}px` : undefined,
+            fontFamily: paper.headerConfig?.fontFamily ? paper.headerConfig.fontFamily : undefined,
+          }}
+        >
           {/* Hidden measurement container */}
           <div
             ref={measureRef}
@@ -2263,6 +2289,44 @@ export default function Editor() {
                   value={paper.title}
                   onChange={(e) => updateQuestionPaper(paper.id, { title: e.target.value })}
                 />
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div className="property-field" style={{ flex: 1 }}>
+                  <label className="property-label">QP Code</label>
+                  <input
+                    type="text"
+                    className="property-input"
+                    value={paper.qpCode || ''}
+                    onChange={(e) => updateQuestionPaper(paper.id, { qpCode: e.target.value })}
+                    placeholder="Enter QP Code..."
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div className="property-field" style={{ flex: 1 }}>
+                  <label className="property-label">Font Size (px)</label>
+                  <input
+                    type="number"
+                    className="property-input"
+                    value={paper.headerConfig?.fontSize || 16}
+                    onChange={(e) => handleUpdateHeaderConfig({ fontSize: parseInt(e.target.value) || 16 })}
+                    placeholder="16"
+                  />
+                </div>
+                <div className="property-field" style={{ flex: 1 }}>
+                  <label className="property-label">Font Family</label>
+                  <select
+                    className="property-input"
+                    value={paper.headerConfig?.fontFamily || 'Inter, sans-serif'}
+                    onChange={(e) => handleUpdateHeaderConfig({ fontFamily: e.target.value })}
+                  >
+                    <option value="Inter, sans-serif">Inter</option>
+                    <option value="Arial, sans-serif">Arial</option>
+                    <option value="'Times New Roman', serif">Times New Roman</option>
+                    <option value="Courier New, monospace">Courier New</option>
+                    <option value="Georgia, serif">Georgia</option>
+                  </select>
+                </div>
               </div>
               <div className="property-field">
                 <label className="property-label">Institution Name</label>
