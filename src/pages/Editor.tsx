@@ -22,6 +22,8 @@ import 'react-quill-new/dist/quill.snow.css';
 import { MathfieldElement } from 'mathlive';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 
 async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<string> {
@@ -1321,12 +1323,11 @@ export default function Editor() {
   const exportPDF = async () => {
     if (isExporting) return;
     setIsExporting(true);
-    showToastMessage('Opening print dialog...');
+    showToastMessage('Generating PDF...');
 
     try {
-      const originalTitle = document.title;
-      if (paper?.title) {
-        document.title = paper.title;
+      if (window.MathJax?.typesetPromise) {
+        await window.MathJax.typesetPromise();
       }
 
       const paperElement = document.getElementById('printable-paper');
@@ -1335,21 +1336,46 @@ export default function Editor() {
       // Temporarily hide UI elements that shouldn't be printed
       paperElement.classList.add('preview-active');
 
-      if (window.MathJax?.typesetPromise) {
-        await window.MathJax.typesetPromise();
-      }
-
-      // Wait a brief moment for layout recalculation and math rendering
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      window.print();
+      const canvas = await html2canvas(paperElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        windowWidth: paperElement.scrollWidth,
+        windowHeight: paperElement.scrollHeight,
+      });
 
       paperElement.classList.remove('preview-active');
-      document.title = originalTitle;
-      
+
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+
+      // A4 dimensions in mm
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Add first page
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Add subsequent pages if content overflows A4 height
+      while (heightLeft >= 0) {
+        position = position - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`${paper?.title || 'question-paper'}.pdf`);
+      showToastMessage('PDF generated successfully!');
     } catch (err) {
       console.error('Print Error:', err);
-      showToastMessage('Failed to open print dialog');
+      showToastMessage('Failed to generate PDF');
     } finally {
       setIsExporting(false);
     }
@@ -1567,6 +1593,37 @@ export default function Editor() {
           </button>
         </div>
       </div>
+
+      <style>
+        {`
+          #printable-paper {
+            --font-serif: ${paper.headerConfig?.fontFamily || "'Noto Serif', serif"};
+          }
+          ${paper.headerConfig?.fontSize ? `
+            #printable-paper .clean-question, #printable-paper .q-number {
+              font-size: ${paper.headerConfig.fontSize}px !important;
+            }
+            #printable-paper .marks-inline, #printable-paper .q-options {
+              font-size: ${Math.max(10, paper.headerConfig.fontSize - 1)}px !important;
+            }
+            #printable-paper .section-title {
+              font-size: ${paper.headerConfig.fontSize + 2}px !important;
+            }
+            #printable-paper .paper-school-name {
+              font-size: ${paper.headerConfig.fontSize + 10}px !important;
+            }
+            #printable-paper .paper-exam-title {
+              font-size: ${paper.headerConfig.fontSize + 2}px !important;
+            }
+            #printable-paper .paper-info, #printable-paper .paper-instructions {
+              font-size: ${Math.max(10, paper.headerConfig.fontSize - 1)}px !important;
+            }
+            #printable-paper .section-divider > span {
+              font-size: ${paper.headerConfig.fontSize + 1}px !important;
+            }
+          ` : ''}
+        `}
+      </style>
 
       {/* CENTER - Clean HTML Paper (WYSIWYG) */}
       <div className="editor-canvas">
