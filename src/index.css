@@ -4066,3 +4066,15 @@ math-virtual-keyboard,
 .q-text *, .q-option * {
   max-width: 100%;
 }
+
+/* QP Code X button visibility */
+.barcode-wrapper .hide-on-print {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.barcode-wrapper:hover .hide-on-print {
+  opacity: 1;
+}
+.preview-active .hide-on-print {
+  display: none !important;
+}

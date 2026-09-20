@@ -61,6 +61,12 @@ export interface HeaderConfig {
   customSections?: string[];
   continuousNumbering?: boolean;
   fontSize?: number;
+  titleFontSize?: number;
+  schoolNameFontSize?: number;
+  infoFontSize?: number;
+  instructionsFontSize?: number;
+  sectionTitleFontSize?: number;
+  bodyFontSize?: number;
   fontFamily?: string;
 }
 

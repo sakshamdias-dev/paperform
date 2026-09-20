@@ -22,8 +22,6 @@ import 'react-quill-new/dist/quill.snow.css';
 import { MathfieldElement } from 'mathlive';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 
 
 async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<string> {
@@ -1336,42 +1334,21 @@ export default function Editor() {
       // Temporarily hide UI elements that shouldn't be printed
       paperElement.classList.add('preview-active');
 
-      const canvas = await html2canvas(paperElement, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        windowWidth: paperElement.scrollWidth,
-        windowHeight: paperElement.scrollHeight,
-      });
+      // @ts-ignore
+      const html2pdf = (await import('html2pdf.js')).default;
+      
+      const opt = {
+        margin:       10, // mm
+        filename:     `${paper?.title || 'question-paper'}.pdf`,
+        image:        { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true, logging: false, windowWidth: paperElement.scrollWidth },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
+        pagebreak:    { mode: 'css', avoid: ['.clean-question', '.section-divider', '.paper-header-container'] }
+      };
+
+      await html2pdf().set(opt).from(paperElement).save();
 
       paperElement.classList.remove('preview-active');
-
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
-
-      // A4 dimensions in mm
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-
-      const imgWidth = pdfWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      // Add first page
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pdfHeight;
-
-      // Add subsequent pages if content overflows A4 height
-      while (heightLeft >= 0) {
-        position = position - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pdfHeight;
-      }
-
-      pdf.save(`${paper?.title || 'question-paper'}.pdf`);
       showToastMessage('PDF generated successfully!');
     } catch (err) {
       console.error('Print Error:', err);
@@ -1599,29 +1576,31 @@ export default function Editor() {
           #printable-paper {
             --font-serif: ${paper.headerConfig?.fontFamily || "'Noto Serif', serif"};
           }
-          ${paper.headerConfig?.fontSize ? `
-            #printable-paper .clean-question, #printable-paper .q-number {
-              font-size: ${paper.headerConfig.fontSize}px !important;
-            }
-            #printable-paper .marks-inline, #printable-paper .q-options {
-              font-size: ${Math.max(10, paper.headerConfig.fontSize - 1)}px !important;
-            }
-            #printable-paper .section-title {
-              font-size: ${paper.headerConfig.fontSize + 2}px !important;
-            }
-            #printable-paper .paper-school-name {
-              font-size: ${paper.headerConfig.fontSize + 10}px !important;
-            }
-            #printable-paper .paper-exam-title {
-              font-size: ${paper.headerConfig.fontSize + 2}px !important;
-            }
-            #printable-paper .paper-info, #printable-paper .paper-instructions {
-              font-size: ${Math.max(10, paper.headerConfig.fontSize - 1)}px !important;
-            }
-            #printable-paper .section-divider > span {
-              font-size: ${paper.headerConfig.fontSize + 1}px !important;
-            }
-          ` : ''}
+          
+          #printable-paper .clean-question, #printable-paper .q-number {
+            font-size: ${paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}px !important;
+          }
+          #printable-paper .marks-inline, #printable-paper .q-options {
+            font-size: ${Math.max(10, (paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14) - 1)}px !important;
+          }
+          #printable-paper .section-title {
+            font-size: ${paper.headerConfig?.sectionTitleFontSize || (paper.headerConfig?.fontSize ? paper.headerConfig.fontSize + 2 : 16)}px !important;
+          }
+          #printable-paper .paper-school-name {
+            font-size: ${paper.headerConfig?.schoolNameFontSize || (paper.headerConfig?.fontSize ? paper.headerConfig.fontSize + 10 : 24)}px !important;
+          }
+          #printable-paper .paper-exam-title {
+            font-size: ${paper.headerConfig?.titleFontSize || (paper.headerConfig?.fontSize ? paper.headerConfig.fontSize + 2 : 16)}px !important;
+          }
+          #printable-paper .paper-info {
+            font-size: ${paper.headerConfig?.infoFontSize || Math.max(10, (paper.headerConfig?.fontSize || 14) - 1)}px !important;
+          }
+          #printable-paper .paper-instructions {
+            font-size: ${paper.headerConfig?.instructionsFontSize || Math.max(10, (paper.headerConfig?.fontSize || 14) - 1)}px !important;
+          }
+          #printable-paper .section-divider > span {
+            font-size: ${paper.headerConfig?.sectionTitleFontSize || (paper.headerConfig?.fontSize ? paper.headerConfig.fontSize + 1 : 15)}px !important;
+          }
         `}
       </style>
 
@@ -2359,18 +2338,72 @@ export default function Editor() {
                   />
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Font Size (px)</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <div className="property-field">
+                  <label className="property-label">Base Font Size (px)</label>
                   <input
                     type="number"
                     className="property-input"
-                    value={paper.headerConfig?.fontSize || 16}
-                    onChange={(e) => handleUpdateHeaderConfig({ fontSize: parseInt(e.target.value) || 16 })}
-                    placeholder="16"
+                    value={paper.headerConfig?.fontSize || 14}
+                    onChange={(e) => handleUpdateHeaderConfig({ fontSize: parseInt(e.target.value) || 14 })}
+                    placeholder="14"
                   />
                 </div>
-                <div className="property-field" style={{ flex: 1 }}>
+                <div className="property-field">
+                  <label className="property-label">Body Font Size (px)</label>
+                  <input
+                    type="number"
+                    className="property-input"
+                    value={paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}
+                    onChange={(e) => handleUpdateHeaderConfig({ bodyFontSize: parseInt(e.target.value) || 14 })}
+                  />
+                </div>
+                <div className="property-field">
+                  <label className="property-label">School Name Size (px)</label>
+                  <input
+                    type="number"
+                    className="property-input"
+                    value={paper.headerConfig?.schoolNameFontSize || 24}
+                    onChange={(e) => handleUpdateHeaderConfig({ schoolNameFontSize: parseInt(e.target.value) || 24 })}
+                  />
+                </div>
+                <div className="property-field">
+                  <label className="property-label">Paper Title Size (px)</label>
+                  <input
+                    type="number"
+                    className="property-input"
+                    value={paper.headerConfig?.titleFontSize || 16}
+                    onChange={(e) => handleUpdateHeaderConfig({ titleFontSize: parseInt(e.target.value) || 16 })}
+                  />
+                </div>
+                <div className="property-field">
+                  <label className="property-label">Section Title Size (px)</label>
+                  <input
+                    type="number"
+                    className="property-input"
+                    value={paper.headerConfig?.sectionTitleFontSize || 16}
+                    onChange={(e) => handleUpdateHeaderConfig({ sectionTitleFontSize: parseInt(e.target.value) || 16 })}
+                  />
+                </div>
+                <div className="property-field">
+                  <label className="property-label">Instructions Size (px)</label>
+                  <input
+                    type="number"
+                    className="property-input"
+                    value={paper.headerConfig?.instructionsFontSize || 13}
+                    onChange={(e) => handleUpdateHeaderConfig({ instructionsFontSize: parseInt(e.target.value) || 13 })}
+                  />
+                </div>
+                <div className="property-field">
+                  <label className="property-label">Meta Info Size (px)</label>
+                  <input
+                    type="number"
+                    className="property-input"
+                    value={paper.headerConfig?.infoFontSize || 13}
+                    onChange={(e) => handleUpdateHeaderConfig({ infoFontSize: parseInt(e.target.value) || 13 })}
+                  />
+                </div>
+                <div className="property-field">
                   <label className="property-label">Font Family</label>
                   <select
                     className="property-input"
