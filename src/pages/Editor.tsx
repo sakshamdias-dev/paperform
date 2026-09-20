@@ -1345,7 +1345,7 @@ export default function Editor() {
         heightLeft -= pdfHeight;
       }
 
-      pdf.save(`${paper.title || 'Paper'}.pdf`);
+      pdf.save(`${paper?.title || 'Paper'}.pdf`);
       showToastMessage('PDF Downloaded!');
     } catch (err) {
       console.error('PDF Export Error:', err);
