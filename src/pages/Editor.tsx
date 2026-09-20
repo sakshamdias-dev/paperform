@@ -22,8 +22,7 @@ import 'react-quill-new/dist/quill.snow.css';
 import { MathfieldElement } from 'mathlive';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+
 
 async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<string> {
   const canvas = document.createElement('canvas');
