@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { supabase } from '../supabase';
 
 export default function Login() {
