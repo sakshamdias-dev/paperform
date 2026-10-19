@@ -151,9 +151,9 @@ export default function Dashboard() {
         <div className="sidebar-header">
           <div className="logo">
             <div className="logo-icon">
-              <FileText size={22} />
+              <img src="/questforma-q.svg" alt="QuestForma Logo" />
             </div>
-            <span className="logo-text">PaperForm</span>
+            <span className="logo-text">QuestForma</span>
           </div>
         </div>
         <nav className="sidebar-nav">

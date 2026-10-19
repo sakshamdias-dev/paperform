@@ -82,15 +82,16 @@ function App() {
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #1A0F2E 0%, #2E1A47 100%)' 
+        background: 'linear-gradient(135deg, #022652 0%, #034089 100%)' 
       }}>
         <div style={{ 
-          width: 40, 
-          height: 40, 
-          border: '3px solid rgba(255,255,255,0.2)', 
-          borderTopColor: '#F5A623',
+          width: 44, 
+          height: 44, 
+          border: '3px solid rgba(255,255,255,0.15)', 
+          borderTopColor: '#ff5b0f',
+          borderRightColor: '#ffd41f',
           borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
+          animation: 'spin 0.8s linear infinite'
         }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>

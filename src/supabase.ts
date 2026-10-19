@@ -8,11 +8,11 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storageKey: 'paperform-auth',
+    storageKey: 'questforma-auth',
     storage: {
       getItem: (key: string) => {
         try {
-          return localStorage.getItem(key);
+          return localStorage.getItem(key) || localStorage.getItem('paperform-auth');
         } catch {
           return null;
         }

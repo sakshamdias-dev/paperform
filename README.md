@@ -1,6 +1,6 @@
-# PaperForm
+# QuestForma
 
-PaperForm is a powerful, interactive frontend application for designing, editing, and managing educational papers and forms. Built with React and Vite, it offers a rich set of tools including drag-and-drop layout management, rich text editing, math equation support, and direct PDF generation.
+QuestForma is a powerful, interactive frontend application for designing, editing, and managing educational papers and forms. Built with React and Vite, it offers a rich set of tools including drag-and-drop layout management, rich text editing, math equation support, and direct PDF generation.
 
 ## Tech Stack
 

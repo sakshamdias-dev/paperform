@@ -30,8 +30,8 @@ async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<
   const canvas = document.createElement('canvas');
   const scaleX = image.naturalWidth / image.width;
   const scaleY = image.naturalHeight / image.height;
-  canvas.width = crop.width;
-  canvas.height = crop.height;
+  canvas.width = crop.width * scaleX;
+  canvas.height = crop.height * scaleY;
   const ctx = canvas.getContext('2d');
 
   if (!ctx) {
@@ -46,8 +46,8 @@ async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<
     crop.height * scaleY,
     0,
     0,
-    crop.width,
-    crop.height
+    crop.width * scaleX,
+    crop.height * scaleY
   );
 
   return new Promise((resolve) => {
@@ -120,6 +120,39 @@ function stripHtml(html: string): string {
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
   return tmp.textContent || tmp.innerText || '';
+}
+
+function LazyNumberInput({ value, onChange, placeholder, className, min, fallback = 0 }: { value: number; onChange: (val: number) => void; placeholder?: string; className?: string; min?: number; fallback?: number }) {
+  const [localValue, setLocalValue] = useState(value?.toString() || '');
+
+  useEffect(() => {
+    setLocalValue(value?.toString() || '');
+  }, [value]);
+
+  const handleCommit = () => {
+    let num = parseInt(localValue);
+    if (isNaN(num)) num = fallback;
+    if (min !== undefined && num < min) num = min;
+    setLocalValue(num.toString());
+    onChange(num);
+  };
+
+  return (
+    <input
+      type="number"
+      className={className}
+      value={localValue}
+      placeholder={placeholder}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={handleCommit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        }
+      }}
+      min={min}
+    />
+  );
 }
 
 interface SubQuestionNode {
@@ -732,9 +765,9 @@ export default function Editor() {
     document.body.style.userSelect = 'none';
   };
 
-  const applyImageEdit = useCallback(async (newSrc?: string) => {
+  const applyImageEdit = useCallback(async (newSrc?: string, newWidth?: number) => {
     if (!editingImage) return;
-    const currentWidth = editingImage.imgElement.getBoundingClientRect().width;
+    const currentWidth = newWidth !== undefined ? newWidth : editingImage.imgElement.getBoundingClientRect().width;
     const parser = new DOMParser();
     const doc = parser.parseFromString(editingImage.originalHtml, 'text/html');
     const imgs = doc.querySelectorAll('img');
@@ -762,7 +795,7 @@ export default function Editor() {
         target !== editingImage.imgElement &&
         !target.closest('.rnd-handle') &&
         !target.closest('.crop-btn') &&
-        !target.closest('.ReactModalPortal') // Crop modal
+        !target.closest('.modal-overlay') // Crop modal
       ) {
         // e.preventDefault() here might break legitimate clicks, so we just passively save
         applyImageEdit();
@@ -1041,6 +1074,18 @@ export default function Editor() {
 
   const handleRemoveDraftSubquestion = (id: string) => {
     setDraftSubquestions(prev => prev.filter(sq => sq.id !== id));
+  };
+
+  const handleCancelDraft = () => {
+    setDraftType(null);
+    setDraftContent('');
+    setDraftOptions(['', '', '', '']);
+    setDraftSubquestions([]);
+    setEditingQuestionId(null);
+    setEditingPQId(null);
+    setQParentId('');
+    setDraftMarks(1);
+    setDraftTypeHeader('');
   };
 
   const handleAddDraftToPaper = async () => {
@@ -1749,7 +1794,7 @@ export default function Editor() {
               </div>
             </div>
           )}
-          <div className="print-footer">Created using PaperForm</div>
+          <div className="print-footer">Created using QuestForma</div>
           <div className="print-spacer" />
 
           {/* Inline image resize handles */}
@@ -1842,7 +1887,7 @@ export default function Editor() {
                   <button className="btn btn-primary" onClick={async () => {
                     if (completedCrop && completedCrop.width > 0 && completedCrop.height > 0 && imgRef.current) {
                       const croppedSrc = await getCroppedImg(imgRef.current, completedCrop);
-                      await applyImageEdit(croppedSrc);
+                      await applyImageEdit(croppedSrc, completedCrop.width);
                     }
                     setShowCropModal(false);
                     setCrop(undefined);
@@ -2132,7 +2177,7 @@ export default function Editor() {
                     />
                   </div>
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
-                    {totalQuestionsCount > 0 && <button className="btn btn-secondary" onClick={() => setActiveView('tree')}>Cancel</button>}
+                    {totalQuestionsCount > 0 && <button className="btn btn-secondary" onClick={() => setActiveView('add-question')}>Cancel</button>}
                     <button className="btn btn-primary" onClick={() => {
                       if (!newSectionTitle.trim()) return;
                       // Just set draftSection to new title, it will be added when a question is added
@@ -2355,7 +2400,7 @@ export default function Editor() {
 
             {activeView === 'add-question' && (
               <div className="modal-actions" style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', flexShrink: 0 }}>
-                {totalQuestionsCount > 0 && <button className="btn btn-secondary" onClick={() => setActiveView('tree')}>Cancel</button>}
+                {totalQuestionsCount > 0 && <button className="btn btn-secondary" onClick={handleCancelDraft}>Cancel</button>}
                 <button className="btn btn-primary" onClick={handleAddDraftToPaper} disabled={saving || !draftContent.trim()}>
                   {saving ? (editingQuestionId ? 'Updating...' : 'Saving...') : (editingQuestionId ? 'Update & Save All' : 'Save Question & Subquestions')}
                 </button>
@@ -2367,15 +2412,31 @@ export default function Editor() {
 
       {/* PAPER SETTINGS MODAL */}
       {showPaperSettings && (
-        <div className="modal-overlay" onClick={() => setShowPaperSettings(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="modal-overlay" 
+             style={{ 
+               background: 'rgba(0, 0, 0, 0.05)',
+               backdropFilter: 'none',
+               alignItems: 'flex-start',
+               justifyContent: 'flex-end',
+               padding: '24px'
+             }} 
+             onClick={() => setShowPaperSettings(false)}>
+          <div className="modal" 
+               onClick={(e) => e.stopPropagation()} 
+               style={{ 
+                 maxWidth: 480,
+                 maxHeight: 'calc(100vh - 48px)',
+                 display: 'flex',
+                 flexDirection: 'column',
+                 boxShadow: '-4px 4px 24px rgba(0,0,0,0.12)'
+               }}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <h2 className="modal-title">Paper Settings</h2>
               <button className="modal-close-btn" onClick={() => setShowPaperSettings(false)}>
                 <X size={18} />
               </button>
             </div>
-            <div className="modal-content" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
+            <div className="modal-content" style={{ overflowY: 'auto', flex: 1 }}>
               <div className="property-field">
                 <label className="property-label">Paper Title</label>
                 <input
@@ -2400,66 +2461,66 @@ export default function Editor() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
                 <div className="property-field">
                   <label className="property-label">Base Font Size (px)</label>
-                  <input
-                    type="number"
+                  <LazyNumberInput
                     className="property-input"
                     value={paper.headerConfig?.fontSize || 14}
-                    onChange={(e) => handleUpdateHeaderConfig({ fontSize: parseInt(e.target.value) || 14 })}
+                    onChange={(val) => handleUpdateHeaderConfig({ fontSize: val })}
                     placeholder="14"
+                    fallback={14}
                   />
                 </div>
                 <div className="property-field">
                   <label className="property-label">Body Font Size (px)</label>
-                  <input
-                    type="number"
+                  <LazyNumberInput
                     className="property-input"
                     value={paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}
-                    onChange={(e) => handleUpdateHeaderConfig({ bodyFontSize: parseInt(e.target.value) || 14 })}
+                    onChange={(val) => handleUpdateHeaderConfig({ bodyFontSize: val })}
+                    fallback={14}
                   />
                 </div>
                 <div className="property-field">
                   <label className="property-label">School Name Size (px)</label>
-                  <input
-                    type="number"
+                  <LazyNumberInput
                     className="property-input"
                     value={paper.headerConfig?.schoolNameFontSize || 24}
-                    onChange={(e) => handleUpdateHeaderConfig({ schoolNameFontSize: parseInt(e.target.value) || 24 })}
+                    onChange={(val) => handleUpdateHeaderConfig({ schoolNameFontSize: val })}
+                    fallback={24}
                   />
                 </div>
                 <div className="property-field">
                   <label className="property-label">Paper Title Size (px)</label>
-                  <input
-                    type="number"
+                  <LazyNumberInput
                     className="property-input"
                     value={paper.headerConfig?.titleFontSize || 16}
-                    onChange={(e) => handleUpdateHeaderConfig({ titleFontSize: parseInt(e.target.value) || 16 })}
+                    onChange={(val) => handleUpdateHeaderConfig({ titleFontSize: val })}
+                    fallback={16}
                   />
                 </div>
                 <div className="property-field">
                   <label className="property-label">Section Title Size (px)</label>
-                  <input
-                    type="number"
+                  <LazyNumberInput
                     className="property-input"
                     value={paper.headerConfig?.sectionTitleFontSize || 16}
-                    onChange={(e) => handleUpdateHeaderConfig({ sectionTitleFontSize: parseInt(e.target.value) || 16 })}
+                    onChange={(val) => handleUpdateHeaderConfig({ sectionTitleFontSize: val })}
+                    fallback={16}
                   />
                 </div>
                 <div className="property-field">
                   <label className="property-label">Instructions Size (px)</label>
-                  <input
-                    type="number"
+                  <LazyNumberInput
                     className="property-input"
                     value={paper.headerConfig?.instructionsFontSize || 13}
-                    onChange={(e) => handleUpdateHeaderConfig({ instructionsFontSize: parseInt(e.target.value) || 13 })}
+                    onChange={(val) => handleUpdateHeaderConfig({ instructionsFontSize: val })}
+                    fallback={13}
                   />
                 </div>
                 <div className="property-field">
                   <label className="property-label">Meta Info Size (px)</label>
-                  <input
-                    type="number"
+                  <LazyNumberInput
                     className="property-input"
                     value={paper.headerConfig?.infoFontSize || 13}
-                    onChange={(e) => handleUpdateHeaderConfig({ infoFontSize: parseInt(e.target.value) || 13 })}
+                    onChange={(val) => handleUpdateHeaderConfig({ infoFontSize: val })}
+                    fallback={13}
                   />
                 </div>
                 <div className="property-field">
@@ -2554,14 +2615,25 @@ export default function Editor() {
                   />
                 </div>
               </div>
-              <div className="property-field">
-                <label className="property-label">Duration (min)</label>
-                <input
-                  type="number"
-                  className="property-input"
-                  value={paper.duration || 0}
-                  onChange={(e) => updateQuestionPaper(paper.id, { duration: parseInt(e.target.value) || 0 })}
-                />
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div className="property-field" style={{ flex: 1 }}>
+                  <label className="property-label">Duration (min)</label>
+                  <LazyNumberInput
+                    className="property-input"
+                    value={paper.duration || 0}
+                    onChange={(val) => updateQuestionPaper(paper.id, { duration: val })}
+                    fallback={0}
+                  />
+                </div>
+                <div className="property-field" style={{ flex: 1 }}>
+                  <label className="property-label">Max Marks</label>
+                  <LazyNumberInput
+                    className="property-input"
+                    value={paper.maxMarks || 0}
+                    onChange={(val) => updateQuestionPaper(paper.id, { maxMarks: val })}
+                    fallback={0}
+                  />
+                </div>
               </div>
               <div className="property-field">
                 <label className="property-label">Instructions</label>

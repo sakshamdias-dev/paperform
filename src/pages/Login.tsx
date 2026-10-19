@@ -52,9 +52,9 @@ export default function Login() {
       <div className="login-card">
         <div className="login-header">
           <div className="login-logo">
-            <FileText />
+            <img src="/questforma-q.svg" alt="QuestForma Logo" />
           </div>
-          <h1 className="login-title">PaperForm</h1>
+          <h1 className="login-title">QuestForma</h1>
           <p className="login-subtitle">
             {isSignUp ? 'Create your account' : 'Sign in to continue'}
           </p>

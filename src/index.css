@@ -1,12 +1,26 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Serif:wght@400;600;700&display=swap');
 
 :root {
-  --primary: #00d2ff;
-  --primary-dark: #0F2744;
-  --primary-mid: #163859;
-  --accent: #FF6B00;
-  --accent-hover: #FF8533;
-  --background: #F5F5F7;
+  /* Major Brand Colors - QuestForma */
+  --primary: #034089;             /* Bondi Deep Blue */
+  --primary-dark: #022652;        /* Dark Bondi Deep Blue */
+  --primary-mid: #0554b3;         /* Mid Bondi Deep Blue */
+  --primary-light: #1565c0;
+  --primary-rgb: 3, 64, 137;
+
+  --accent: #ff5b0f;              /* SUPER ORANGE */
+  --accent-hover: #e04c06;        /* Deeper orange */
+  --accent-rgb: 255, 91, 15;
+
+  --gold: #ffd41f;                /* Vibrant Gold */
+  --gold-rgb: 255, 212, 31;
+
+  /* Super Orange + Vibrant Gold Gradients */
+  --accent-gradient: linear-gradient(135deg, #ff5b0f 0%, #ffd41f 100%);
+  --accent-gradient-hover: linear-gradient(135deg, #e64e08 0%, #f0c30a 100%);
+  --accent-gradient-h: linear-gradient(90deg, #ff5b0f 0%, #ffd41f 100%);
+
+  --background: #F5F7FA;
   --surface: #FFFFFF;
   --text-primary: #1A1A2E;
   --text-secondary: #6B7280;
@@ -16,7 +30,7 @@
   --error: #EF4444;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 25px rgba(10, 25, 41, 0.15);
+  --shadow-lg: 0 10px 25px rgba(3, 64, 137, 0.12);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -113,17 +127,27 @@ textarea::placeholder {
 }
 
 .logo-icon {
-  width: 44px;
-  height: 44px;
-  background: var(--accent);
+  width: 42px;
+  height: 42px;
+  background: #ffffff;
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.logo-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .logo-icon svg {
-  color: var(--primary-dark);
+  color: var(--primary);
 }
 
 .logo-text {
@@ -157,8 +181,9 @@ textarea::placeholder {
 }
 
 .nav-item.active {
-  background: rgba(245, 166, 35, 0.15);
-  color: var(--background);
+  background: rgba(255, 91, 15, 0.18);
+  color: #ffd41f;
+  font-weight: 600;
 }
 
 .nav-item svg {
@@ -186,14 +211,15 @@ textarea::placeholder {
   gap: 12px;
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  background-color: var(--accent);
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .user-avatar {
   width: 40px;
   height: 40px;
-  background: var(--accent);
-  border: 1px solid white;
+  background: var(--accent-gradient);
+  border: 2px solid white;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -202,6 +228,7 @@ textarea::placeholder {
   font-size: 16px;
   color: white;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(255, 91, 15, 0.3);
 }
 
 .user-info {
@@ -248,23 +275,24 @@ textarea::placeholder {
 
 .new-paper-btn {
   width: 100%;
-  background: var(--accent);
-  color: var(--primary-dark);
+  background: var(--accent-gradient);
+  color: #022652;
   padding: 14px 20px;
   border-radius: var(--radius-md);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   transition: var(--transition);
+  box-shadow: 0 4px 14px rgba(255, 91, 15, 0.3);
 }
 
 .new-paper-btn:hover {
-  background: var(--accent-hover);
+  background: var(--accent-gradient-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(245, 166, 35, 0.3);
+  box-shadow: 0 6px 18px rgba(255, 91, 15, 0.45);
 }
 
 /* Main Content */
@@ -451,12 +479,13 @@ textarea::placeholder {
 }
 
 .paper-action-btn.primary {
-  background: var(--accent);
+  background: var(--accent-gradient);
   color: white;
+  font-weight: 600;
 }
 
 .paper-action-btn.primary:hover {
-  background: var(--accent-hover);
+  background: var(--accent-gradient-hover);
 }
 
 .paper-action-btn.secondary {
@@ -604,12 +633,12 @@ textarea::placeholder {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: rgba(245, 166, 35, 0.15);
+  background: rgba(255, 91, 15, 0.15);
   color: var(--accent);
 }
 
 .block-item-icon.section {
-  background: rgba(245, 166, 35, 0.15);
+  background: rgba(255, 91, 15, 0.15);
   color: var(--accent);
 }
 
@@ -631,7 +660,7 @@ textarea::placeholder {
 
 .block-item.active {
   border-color: var(--accent);
-  background: rgba(245, 166, 35, 0.1);
+  background: rgba(255, 91, 15, 0.1);
 }
 
 .block-item-info {
@@ -802,12 +831,12 @@ textarea::placeholder {
 
 .block-display:hover {
   border-color: var(--accent);
-  box-shadow: 0 2px 8px rgba(245, 166, 35, 0.15);
+  box-shadow: 0 2px 8px rgba(255, 91, 15, 0.15);
 }
 
 .block-display.selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.2);
+  box-shadow: 0 0 0 3px rgba(255, 91, 15, 0.2);
 }
 
 .block-display.dragging {
@@ -1263,12 +1292,15 @@ textarea::placeholder {
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: var(--accent-gradient);
   color: white;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(255, 91, 15, 0.25);
 }
 
 .btn-primary:hover {
-  background: var(--accent-hover);
+  background: var(--accent-gradient-hover);
+  box-shadow: 0 4px 12px rgba(255, 91, 15, 0.35);
 }
 
 .btn-danger {
@@ -1372,16 +1404,18 @@ textarea::placeholder {
   gap: 6px;
   padding: 8px 16px;
   border-radius: var(--radius-md);
-  background: var(--accent);
+  background: var(--accent-gradient);
   color: white;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   transition: var(--transition);
   white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(255, 91, 15, 0.25);
 }
 
 .toolbar-btn-accent:hover {
-  background: var(--accent-hover);
+  background: var(--accent-gradient-hover);
+  box-shadow: 0 4px 12px rgba(255, 91, 15, 0.35);
 }
 
 /* =============================================
@@ -1683,7 +1717,7 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
   padding: 20px;
 }
 
@@ -1702,27 +1736,37 @@ textarea::placeholder {
 }
 
 .login-logo {
-  width: 56px;
-  height: 56px;
-  background: var(--accent);
+  width: 64px;
+  height: 64px;
+  background: #ffffff;
   border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 16px;
+  box-shadow: 0 8px 24px rgba(3, 64, 137, 0.12);
+  border: 1px solid rgba(3, 64, 137, 0.08);
+  padding: 6px;
+  overflow: hidden;
+}
+
+.login-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .login-logo svg {
-  color: var(--primary-dark);
+  color: var(--primary);
   width: 28px;
   height: 28px;
 }
 
 .login-title {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 700;
   margin-bottom: 4px;
-  color: var(--primary-dark);
+  color: var(--primary);
 }
 
 .login-subtitle {
@@ -1748,7 +1792,7 @@ textarea::placeholder {
 
 .login-form .property-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.1);
+  box-shadow: 0 0 0 3px rgba(255, 91, 15, 0.1);
 }
 
 /* Export Modal */
@@ -1776,7 +1820,7 @@ textarea::placeholder {
 
 .export-option.selected {
   border-color: var(--accent);
-  background: rgba(245, 166, 35, 0.05);
+  background: rgba(255, 91, 15, 0.05);
 }
 
 .export-option-radio {
@@ -2530,7 +2574,7 @@ textarea::placeholder {
 
 .paper-question-content.selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.2);
+  box-shadow: 0 0 0 3px rgba(255, 91, 15, 0.2);
 }
 
 .paper-question-wrapper.dragging .paper-question-content {
