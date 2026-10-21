@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Plus, Trash2, Copy, Edit, FolderOpen, LogOut, Loader2, BookOpen, Users, GraduationCap, Search } from 'lucide-react';
+import { FileText, Plus, Trash2, Copy, Edit, FolderOpen, LogOut, Loader2, BookOpen, Users, GraduationCap, Search, Lock } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../supabase';
 
@@ -25,9 +25,10 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false);
 
   // Settings form state
-  const [settingsTab, setSettingsTab] = useState<'courses' | 'subjects' | 'classes'>('courses');
+  const [settingsTab, setSettingsTab] = useState<'courses' | 'subjects' | 'classes' | 'privacy'>('courses');
   const [newItemName, setNewItemName] = useState('');
   const [addingItem, setAddingItem] = useState(false);
+  const toggleKeepQuestionsPrivate = useStore((s) => s.toggleKeepQuestionsPrivate);
 
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
@@ -428,24 +429,68 @@ export default function Dashboard() {
                   <Users size={18} style={{ marginRight: 7, marginBottom: -4 }} />
                   Classes
                 </button>
+                <button
+                  className={`btn ${settingsTab === 'privacy' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSettingsTab('privacy')}
+                >
+                  <Lock size={18} style={{ marginRight: 7, marginBottom: -4 }} />
+                  Privacy & Sharing
+                </button>
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    type="text"
-                    className="property-input"
-                    placeholder={`Add new ${settingsTab.slice(0, -1)}...`}
-                    value={newItemName}
-                    onChange={(e) => setNewItemName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
-                    style={{ flex: 1 }}
-                  />
-                  <button className="btn btn-primary" onClick={handleAddItem} disabled={addingItem}>
-                    <Plus size={16} />
-                  </button>
+              {settingsTab !== 'privacy' && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="text"
+                      className="property-input"
+                      placeholder={`Add new ${settingsTab.slice(0, -1)}...`}
+                      value={newItemName}
+                      onChange={(e) => setNewItemName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
+                      style={{ flex: 1 }}
+                    />
+                    <button className="btn btn-primary" onClick={handleAddItem} disabled={addingItem}>
+                      <Plus size={16} />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {settingsTab === 'privacy' && (
+                <div style={{ padding: '8px 0' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, padding: 16, backgroundColor: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+                    <div>
+                      <h4 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 600 }}>Keep my questions private</h4>
+                      <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                        When disabled (default), questions you create and edit are automatically synced to QuestForma's shared question bank for peer teachers to discover, citing you as the original author. Enable this setting if you wish to keep your authored questions exclusively in your private workspace.
+                      </p>
+                    </div>
+                    <label className="switch" style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0, marginTop: 4 }}>
+                      <input
+                        type="checkbox"
+                        checked={user?.keepQuestionsPrivate || false}
+                        onChange={(e) => toggleKeepQuestionsPrivate(e.target.checked)}
+                        style={{ opacity: 0, width: 0, height: 0 }}
+                      />
+                      <span
+                        style={{
+                          position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                          backgroundColor: user?.keepQuestionsPrivate ? 'var(--primary-color, #2563eb)' : '#cbd5e1',
+                          borderRadius: 24, transition: '.3s'
+                        }}
+                      >
+                        <span
+                          style={{
+                            position: 'absolute', content: '""', height: 18, width: 18, left: user?.keepQuestionsPrivate ? 22 : 3, bottom: 3,
+                            backgroundColor: 'white', borderRadius: '50%', transition: '.3s'
+                          }}
+                        />
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {settingsTab === 'courses' && courses.map((c) => (

@@ -6,6 +6,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Editor from './pages/Editor';
 
+import { ErrorBoundary } from './components/ErrorBoundary';
+
 function App() {
   const user = useStore((s) => s.user);
   const setUser = useStore((s) => s.setUser);
@@ -22,9 +24,13 @@ function App() {
         try {
           const { data: profileData } = await supabase
             .from('profiles')
-            .select('full_name, school_name, created_at, updated_at')
+            .select('full_name, school_name, keep_questions_private, created_at, updated_at')
             .eq('id', session.user.id)
             .maybeSingle();
+
+          const privacyPref = profileData?.keep_questions_private !== undefined
+            ? Boolean(profileData.keep_questions_private)
+            : localStorage.getItem('questforma_privacy_pref') === 'true';
 
           if (mounted) {
             setUser({
@@ -32,10 +38,15 @@ function App() {
               fullName: profileData?.full_name || session.user.email?.split('@')[0] || 'User',
               schoolName: profileData?.school_name || '',
               email: session.user.email || '',
+              keepQuestionsPrivate: privacyPref,
               createdAt: profileData?.created_at ? new Date(profileData.created_at).getTime() : Date.now(),
               updatedAt: profileData?.updated_at ? new Date(profileData.updated_at).getTime() : Date.now(),
             });
-            await fetchQuestionPapers().catch(() => {});
+            await Promise.allSettled([
+              fetchQuestionPapers(),
+              useStore.getState().fetchSharedQuestions(),
+              useStore.getState().fetchNotifications(),
+            ]);
           }
         } catch (err) {
           console.error('Profile fetch error:', err);
@@ -103,7 +114,18 @@ function App() {
       <Routes>
         <Route path="/login" element={user?.id ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/" element={user?.id ? <Dashboard /> : <Navigate to="/login" replace />} />
-        <Route path="/editor/:id" element={user?.id ? <Editor /> : <Navigate to="/login" replace />} />
+        <Route
+          path="/editor/:id"
+          element={
+            user?.id ? (
+              <ErrorBoundary>
+                <Editor />
+              </ErrorBoundary>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
       </Routes>
     </BrowserRouter>
   );
