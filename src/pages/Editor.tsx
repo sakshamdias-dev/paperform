@@ -86,7 +86,6 @@ import {
   Plus,
   Trash2,
   GripVertical,
-  Download,
   ArrowLeft,
   Check,
   ListChecks,
@@ -107,19 +106,29 @@ import {
   Loader2,
   FileText,
   BookOpen,
-  Bell,
+  Printer,
   Eye,
 } from 'lucide-react';
 import { useStore } from '../store';
-import type { Question, PaperQuestion, QuestionType, PaperSection, Difficulty, SubQuestionNumberingStyle, VisibleHeaderFields } from '../types';
+import type {
+  Question,
+  PaperQuestion,
+  QuestionType,
+  PaperSection,
+  Difficulty,
+  SubQuestionNumberingStyle,
+  VisibleHeaderFields,
+  CognitiveLevel,
+  QuestionMeta,
+} from '../types';
+import { COGNITIVE_LEVELS, DEFAULT_COGNITIVE_LEVEL } from '../types';
 import React from 'react';
 import QuestionBankSidebar from '../components/QuestionBankSidebar';
 import QuestionViewModal, { type ViewModalQuestion } from '../components/QuestionViewModal';
 import SectionEditModal from '../components/SectionEditModal';
-import { renderMath } from '../utils/mathjax';
+import { renderMath, preprocessMathHtml } from '../utils/mathjax';
 
 const HEADER_FIELD_CONFIG: { key: keyof VisibleHeaderFields; label: string }[] = [
-  { key: 'schoolName', label: 'Institution' },
   { key: 'examTitle', label: 'Exam Title' },
   { key: 'course', label: 'Course' },
   { key: 'subject', label: 'Subject' },
@@ -127,7 +136,6 @@ const HEADER_FIELD_CONFIG: { key: keyof VisibleHeaderFields; label: string }[] =
   { key: 'date', label: 'Date' },
   { key: 'duration', label: 'Duration' },
   { key: 'totalMarks', label: 'Total Marks' },
-  { key: 'instructions', label: 'Instructions' },
 ];
 
 const BLOCK_TYPES: { type: QuestionType; label: string; icon: typeof AlignLeft; description: string; header: string }[] = [
@@ -376,16 +384,16 @@ function SortableQuestion({
                 <span className="optional-badge">Optional</span>
               )}
               {isTextType ? (
-                <div className="q-text q-text-passage" dangerouslySetInnerHTML={{ __html: (question.content || '').replace(/&nbsp;/g, ' ') }} />
+                <div className="q-text q-text-passage" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(question.content) }} />
               ) : (
-                <div className="q-text" dangerouslySetInnerHTML={{ __html: (question.content || '').replace(/&nbsp;/g, ' ') }} />
+                <div className="q-text" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(question.content) }} />
               )}
               {question.questionType === 'mcq' && question.options && question.options.length > 0 && (
                 <div className={`q-options q-options-${mcqLayout}`}>
                   {question.options.map((opt, i) => (
                     <span key={i} className="q-option" data-option-index={i} style={{ display: 'inline-flex', alignItems: 'flex-start' }}>
                       <span style={{ marginRight: '4px' }}>{String.fromCharCode(65 + i)}.</span>
-                      <span dangerouslySetInnerHTML={{ __html: (opt || '').replace(/&nbsp;/g, ' ') }} />
+                      <span dangerouslySetInnerHTML={{ __html: preprocessMathHtml(opt) }} />
                     </span>
                   ))}
                 </div>
@@ -446,7 +454,8 @@ function SortableQuestion({
           <div className="sub-questions" style={{ marginTop: 12 }}>
             {subQuestions.map((sub, si) => {
               const renderSubQ = (node: SubQuestionNode, depth: number, idx: number, numSiblings: number): React.ReactNode => {
-                const label = formatSubQuestionNumber(idx, depth, subQuestionNumberingStyle);
+                const effectiveStyle = node.pq.subNumberingStyle || paperQuestion.subNumberingStyle || subQuestionNumberingStyle;
+                const label = formatSubQuestionNumber(idx, depth, effectiveStyle);
                 const subContentText = stripHtml(node.question.content).trim();
                 const hasCustomNumber = /^(q\.?\s*\d+|question\s*\d+|\d+[\.\)]|\(\d+\)|[a-z][\.\)]|\([a-z]\)|\([ivx]+\)|[ivx]+[\.\)]|[•\-\*])/i.test(subContentText);
 
@@ -467,13 +476,13 @@ function SortableQuestion({
                           {node.pq.isOptional && (
                             <span className="optional-badge" style={{ fontSize: '10px' }}>Optional</span>
                           )}
-                          <div className="q-text" dangerouslySetInnerHTML={{ __html: (node.question.content || '').replace(/&nbsp;/g, ' ') }} />
+                          <div className="q-text" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(node.question.content) }} />
                           {node.question.questionType === 'mcq' && node.question.options && node.question.options.length > 0 && (
                             <div className={`q-options q-options-${subMcqLayout}`}>
                               {node.question.options.map((opt, oi) => (
                                 <span key={oi} className="q-option" style={{ display: 'inline-flex', alignItems: 'flex-start' }}>
                                   <span style={{ marginRight: '4px' }}>{String.fromCharCode(65 + oi)}.</span>
-                                  <span dangerouslySetInnerHTML={{ __html: (opt || '').replace(/&nbsp;/g, ' ') }} />
+                                  <span dangerouslySetInnerHTML={{ __html: preprocessMathHtml(opt) }} />
                                 </span>
                               ))}
                             </div>
@@ -690,12 +699,17 @@ export default function Editor() {
     courses,
     subjects,
     classes,
+    chapters,
+    topics,
+    categories,
     sharedQuestions,
-    notifications,
     fetchPaperQuestions,
     fetchQuestions,
     fetchSharedQuestions,
-    fetchNotifications,
+    fetchLookups,
+    createChapter,
+    createTopic,
+    createCategory,
     removeQuestionFromPaper,
     reorderPaperQuestions,
     updateQuestionPaper,
@@ -704,8 +718,6 @@ export default function Editor() {
     updatePaperQuestion,
     deleteQuestion,
     importSharedQuestionToPaper,
-    markNotificationAsRead,
-    clearNotifications,
   } = useStore();
 
   const user = useStore((s) => s.user);
@@ -729,6 +741,23 @@ export default function Editor() {
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [editingPQId, setEditingPQId] = useState<string | null>(null);
 
+  // Classification & Taxonomy states for Question Editor
+  const [draftCourseId, setDraftCourseId] = useState<string>('');
+  const [draftSubjectId, setDraftSubjectId] = useState<string>('');
+  const [draftCognitiveLevel, setDraftCognitiveLevel] = useState<CognitiveLevel>(DEFAULT_COGNITIVE_LEVEL);
+  const [draftChapterId, setDraftChapterId] = useState<string>('');
+  const [draftTopicId, setDraftTopicId] = useState<string>('');
+  const [draftCategoryId, setDraftCategoryId] = useState<string>('');
+  const [draftSubNumberingStyle, setDraftSubNumberingStyle] = useState<SubQuestionNumberingStyle | ''>('');
+
+  // Inline "add new" inputs for lookups
+  const [isAddingChapter, setIsAddingChapter] = useState(false);
+  const [newChapterName, setNewChapterName] = useState('');
+  const [isAddingTopic, setIsAddingTopic] = useState(false);
+  const [newTopicName, setNewTopicName] = useState('');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   interface DraftSubquestion {
     id: string; // Used for React keys and temp identification
     questionId?: string; // Original question ID if editing
@@ -740,6 +769,8 @@ export default function Editor() {
     difficulty: Difficulty;
     isOptional?: boolean;
     isExpanded?: boolean;
+    cognitiveLevel?: CognitiveLevel;
+    subNumberingStyle?: SubQuestionNumberingStyle;
   }
   const [draftSubquestions, setDraftSubquestions] = useState<DraftSubquestion[]>([]);
 
@@ -755,7 +786,6 @@ export default function Editor() {
   const [isQuestionBankOpen, setIsQuestionBankOpen] = useState(false);
   const [viewingQuestion, setViewingQuestion] = useState<ViewModalQuestion | null>(null);
   const [editingSection, setEditingSection] = useState<{ oldName: string; name: string; description: string } | null>(null);
-  const [showNotifications, setShowNotifications] = useState(false);
 
 
 
@@ -777,6 +807,14 @@ export default function Editor() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isQuestionBankOpen, showPaperSettings]);
+
+  // Auto-sync draft course and subject from paper details
+  useEffect(() => {
+    if (paper) {
+      if (!draftCourseId && paper.courseId) setDraftCourseId(paper.courseId);
+      if (!draftSubjectId && paper.subjectId) setDraftSubjectId(paper.subjectId);
+    }
+  }, [paper?.courseId, paper?.subjectId]);
 
   const [editingImage, setEditingImage] = useState<{
     imgElement: HTMLImageElement;
@@ -980,9 +1018,9 @@ export default function Editor() {
       fetchPaperQuestions(id);
       fetchQuestions();
       fetchSharedQuestions();
-      fetchNotifications();
+      fetchLookups();
     }
-  }, [id, fetchPaperQuestions, fetchQuestions, fetchSharedQuestions, fetchNotifications]);
+  }, [id, fetchPaperQuestions, fetchQuestions, fetchSharedQuestions, fetchLookups]);
 
   const paperQuestionsList = useMemo(() => {
     return paperQuestions.get(id || '') || [];
@@ -1247,6 +1285,8 @@ export default function Editor() {
     setDraftTypeHeader('');
     setSelectedPQId(null);
     setDraftSubquestions([]);
+    setDraftCourseId(paper?.courseId || '');
+    setDraftSubjectId(paper?.subjectId || '');
     setShowCreatorHub(false);
   };
 
@@ -1260,6 +1300,8 @@ export default function Editor() {
         options: ['', '', '', ''],
         marks: 1,
         difficulty: 'medium',
+        cognitiveLevel: 'understand',
+        subNumberingStyle: undefined,
         isExpanded: true
       }
     ]);
@@ -1283,6 +1325,16 @@ export default function Editor() {
     setQParentId('');
     setDraftMarks(1);
     setDraftIsOptional(false);
+    setDraftCourseId(paper?.courseId || '');
+    setDraftSubjectId(paper?.subjectId || '');
+    setDraftCognitiveLevel(DEFAULT_COGNITIVE_LEVEL);
+    setDraftChapterId('');
+    setDraftTopicId('');
+    setDraftCategoryId('');
+    setDraftSubNumberingStyle('');
+    setIsAddingChapter(false);
+    setIsAddingTopic(false);
+    setIsAddingCategory(false);
   };
 
   const handleAddDraftToPaper = async () => {
@@ -1312,6 +1364,19 @@ export default function Editor() {
       let currentParentId = qParentId || undefined;
       const finalMarks = draftType === 'text' ? 0 : draftMarks;
 
+      const resolvedCourseId = draftCourseId || paper?.courseId;
+      const resolvedSubjectId = draftSubjectId || paper?.subjectId;
+
+      const meta: QuestionMeta = {
+        courseId: resolvedCourseId,
+        subjectId: resolvedSubjectId,
+        classId: paper?.classId,
+        chapterId: draftChapterId || undefined,
+        topicId: draftTopicId || undefined,
+        categoryId: draftCategoryId || undefined,
+        cognitiveLevel: draftCognitiveLevel,
+      };
+
       // If we are editing an existing question, update it instead of creating a new one
       if (editingQuestionId && editingPQId) {
         await updateQuestion(editingQuestionId, {
@@ -1320,12 +1385,25 @@ export default function Editor() {
           options: options.length > 0 ? options : [],
           difficulty: draftDifficulty,
           typeHeader: draftTypeHeader || undefined,
+          courseId: resolvedCourseId,
+          subjectId: resolvedSubjectId,
+          classId: paper?.classId,
+          chapterId: draftChapterId || undefined,
+          topicId: draftTopicId || undefined,
+          categoryId: draftCategoryId || undefined,
+          cognitiveLevel: draftCognitiveLevel,
+          subNumberingStyle: draftSubNumberingStyle || undefined,
         });
         await updatePaperQuestion(editingPQId, {
           marks: finalMarks,
           section: draftSection,
           parentId: currentParentId || null,
           isOptional: draftIsOptional,
+          chapterId: draftChapterId || undefined,
+          topicId: draftTopicId || undefined,
+          categoryId: draftCategoryId || undefined,
+          cognitiveLevel: draftCognitiveLevel,
+          subNumberingStyle: draftSubNumberingStyle || undefined,
         });
         currentParentId = editingPQId;
       } else {
@@ -1338,14 +1416,18 @@ export default function Editor() {
           draftSection,
           currentParentId,
           finalMarks,
-          undefined,
-          paper?.subjectId,
+          resolvedCourseId,
+          resolvedSubjectId,
           paper?.classId,
           draftDifficulty,
           undefined,
           undefined,
           draftTypeHeader || undefined,
-          draftIsOptional
+          draftIsOptional,
+          undefined,
+          'ORIGINAL',
+          meta,
+          draftSubNumberingStyle || undefined
         );
         if (result) {
           currentParentId = result;
@@ -1378,13 +1460,26 @@ export default function Editor() {
             questionType: sq.type,
             options: sqOptions.length > 0 ? sqOptions : [],
             difficulty: sq.difficulty,
+            cognitiveLevel: sq.cognitiveLevel || 'understand',
+            subNumberingStyle: sq.subNumberingStyle || undefined,
           });
           await updatePaperQuestion(sq.pqId, {
             marks: sqMarks,
             isOptional: sq.isOptional || false,
+            cognitiveLevel: sq.cognitiveLevel || 'understand',
+            subNumberingStyle: sq.subNumberingStyle || undefined,
           });
         } else {
           // Create new
+          const sqMeta: QuestionMeta = {
+            courseId: resolvedCourseId,
+            subjectId: resolvedSubjectId,
+            classId: paper?.classId,
+            chapterId: draftChapterId || undefined,
+            topicId: draftTopicId || undefined,
+            categoryId: draftCategoryId || undefined,
+            cognitiveLevel: sq.cognitiveLevel || 'understand',
+          };
           await createAndAddQuestion(
             id,
             sq.content.trim(),
@@ -1393,14 +1488,18 @@ export default function Editor() {
             draftSection,
             currentParentId,
             sqMarks,
-            undefined,
-            paper?.subjectId,
+            resolvedCourseId,
+            resolvedSubjectId,
             paper?.classId,
             sq.difficulty,
             undefined,
             undefined,
             undefined,
-            sq.isOptional || false
+            sq.isOptional || false,
+            undefined,
+            'ORIGINAL',
+            sqMeta,
+            sq.subNumberingStyle || undefined
           );
         }
       }
@@ -1411,6 +1510,11 @@ export default function Editor() {
       setDraftOptions(['', '', '', '']);
       setDraftSubquestions([]);
       setDraftIsOptional(false);
+      setDraftCognitiveLevel(DEFAULT_COGNITIVE_LEVEL);
+      setDraftChapterId('');
+      setDraftTopicId('');
+      setDraftCategoryId('');
+      setDraftSubNumberingStyle('');
       setEditingQuestionId(null);
       setEditingPQId(null);
       setQParentId('');
@@ -1465,6 +1569,13 @@ export default function Editor() {
     setDraftDifficulty(q.difficulty || 'medium');
     setDraftTypeHeader(q.typeHeader || '');
     setDraftIsOptional(pq.isOptional || false);
+    setDraftCourseId(q.courseId || paper?.courseId || '');
+    setDraftSubjectId(q.subjectId || paper?.subjectId || '');
+    setDraftCognitiveLevel(q.cognitiveLevel || pq.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL);
+    setDraftChapterId(q.chapterId || pq.chapterId || '');
+    setDraftTopicId(q.topicId || pq.topicId || '');
+    setDraftCategoryId(q.categoryId || pq.categoryId || '');
+    setDraftSubNumberingStyle(pq.subNumberingStyle || q.subNumberingStyle || '');
 
     // Load existing subquestions
     const children = paperQuestionsList
@@ -1484,7 +1595,9 @@ export default function Editor() {
         marks: childPq.marks || 1,
         difficulty: childQ?.difficulty || 'medium',
         isOptional: childPq.isOptional || false,
-        isExpanded: false
+        isExpanded: false,
+        cognitiveLevel: childQ?.cognitiveLevel || childPq.cognitiveLevel || 'understand',
+        subNumberingStyle: childPq.subNumberingStyle || childQ?.subNumberingStyle,
       };
     });
     setDraftSubquestions(loadedSubqs);
@@ -1497,20 +1610,6 @@ export default function Editor() {
   const getCourse = (id?: string) => courses.find(c => c.id === id);
   const getSubject = (id?: string) => subjects.find(s => s.id === id);
   const getClass = (id?: string) => classes.find(c => c.id === id);
-
-  const topLevelQuestions = useMemo(() => {
-    return paperQuestionsList
-      .filter((pq) => !pq.parentId)
-      .map((pq, idx) => {
-        const q = getQuestion(pq.questionId);
-        const plainText = q ? q.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim() : '';
-        const snippet = plainText ? plainText.substring(0, 42) + (plainText.length > 42 ? '...' : '') : `Question ${idx + 1}`;
-        return {
-          id: pq.id,
-          label: `Q${idx + 1}: ${snippet}`,
-        };
-      });
-  }, [paperQuestionsList, questions]);
 
 
 
@@ -1591,12 +1690,15 @@ export default function Editor() {
     setIsExporting(true);
     showToastMessage('Generating PDF...');
 
+    let clonedCache: Node | null = null;
+    const paperElement = document.getElementById('printable-paper');
+
     try {
+      if (!paperElement) throw new Error('Paper container not found');
+
       // 1. Typeset MathJax formulas first
       await renderMath();
-
-      const paperElement = document.getElementById('printable-paper');
-      if (!paperElement) throw new Error('Paper container not found');
+      await new Promise(r => setTimeout(r, 120));
 
       // 2. Ensure all images inside paper are completely loaded
       const imgElements = Array.from(paperElement.querySelectorAll('img'));
@@ -1613,55 +1715,157 @@ export default function Editor() {
       // Temporarily add preview active class
       paperElement.classList.add('preview-active');
 
+      // If a global SVG cache exists, clone into paperElement so all math SVGs resolve during html2canvas cloning
+      const globalSvgCache = document.getElementById('MJX-SVG-global-cache');
+      if (globalSvgCache && !paperElement.querySelector('#MJX-SVG-global-cache')) {
+        clonedCache = globalSvgCache.cloneNode(true);
+        paperElement.appendChild(clonedCache);
+      }
+
+      // 3. Render high-resolution canvas (scale 2.5 gives vector-grade crispness without excessive memory)
       const canvas = await html2canvas(paperElement, {
-        scale: 2,
+        scale: 2.5,
         useCORS: true,
         allowTaint: true,
         logging: false,
+        backgroundColor: '#ffffff',
         windowWidth: paperElement.scrollWidth,
         windowHeight: paperElement.scrollHeight,
         scrollY: 0,
         scrollX: 0
       });
 
-      paperElement.classList.remove('preview-active');
-
-      // A4 dimensions in mm: 210 x 297
+      // 4. A4 dimensions in mm: 210 x 297 with tight 4mm margin (reduced from 8mm to eliminate dead borders)
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfPageWidth = 210;
       const pdfPageHeight = 297;
-      const margin = 8; // 8mm margin all around
-      const contentWidth = pdfPageWidth - (margin * 2);
-      const contentHeight = pdfPageHeight - (margin * 2);
+      const margin = 4; // 4mm margin
+      const contentWidth = pdfPageWidth - (margin * 2); // 202mm
+      const contentHeight = pdfPageHeight - (margin * 2); // 289mm
 
       // Height of one content page in canvas pixels
       const pageCanvasHeight = (canvas.width * contentHeight) / contentWidth;
-      const totalPages = Math.ceil(canvas.height / pageCanvasHeight);
 
-      for (let page = 0; page < totalPages; page++) {
-        if (page > 0) pdf.addPage();
+      // 5. Smart page cut calculation: query atomic unbreakable blocks to prevent cutting text/images
+      const paperRect = paperElement.getBoundingClientRect();
+      const atomicElements = Array.from(
+        paperElement.querySelectorAll<HTMLElement>(
+          'table tr, img, .section-divider, .rendered-question-item, .clean-question, .q-option, .q-row, p, li, blockquote'
+        )
+      );
 
-        const srcY = page * pageCanvasHeight;
-        const srcHeight = Math.min(pageCanvasHeight, canvas.height - srcY);
+      interface UnbreakableBox {
+        top: number;
+        bottom: number;
+      }
 
-        // Render page slice onto a temporary canvas
+      const unbreakableBoxes: UnbreakableBox[] = [];
+      const scaleY = canvas.height / paperRect.height;
+
+      for (const el of atomicElements) {
+        const rect = el.getBoundingClientRect();
+        const top = (rect.top - paperRect.top) * scaleY;
+        const bottom = (rect.bottom - paperRect.top) * scaleY;
+        const height = bottom - top;
+
+        // Any block within reasonable size (< 85% of page canvas height) shouldn't be sliced across
+        if (height > 4 && height < pageCanvasHeight * 0.85) {
+          unbreakableBoxes.push({ top, bottom });
+        }
+      }
+
+      // Sort boxes by top position
+      unbreakableBoxes.sort((a, b) => a.top - b.top);
+
+      let currentCanvasY = 0;
+      let pageIndex = 0;
+
+      while (currentCanvasY < canvas.height - 4) {
+        if (pageIndex > 0) pdf.addPage();
+        pageIndex++;
+
+        const remainingCanvasHeight = canvas.height - currentCanvasY;
+
+        // If remaining content fits on this page, output and finish
+        if (remainingCanvasHeight <= pageCanvasHeight + 4) {
+          const sliceHeight = remainingCanvasHeight;
+          const pageCanvas = document.createElement('canvas');
+          pageCanvas.width = canvas.width;
+          pageCanvas.height = sliceHeight;
+          const ctx = pageCanvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, pageCanvas.width, sliceHeight);
+            ctx.drawImage(
+              canvas,
+              0, currentCanvasY, canvas.width, sliceHeight,
+              0, 0, pageCanvas.width, sliceHeight
+            );
+
+            // Lossless PNG for crisp, artifact-free text & math rendering
+            const pageImgData = pageCanvas.toDataURL('image/png');
+            const renderHeight = (sliceHeight * contentWidth) / canvas.width;
+            pdf.addImage(pageImgData, 'PNG', margin, margin, contentWidth, renderHeight);
+          }
+          break;
+        }
+
+        // Nominal end of this page
+        const nominalCutY = currentCanvasY + pageCanvasHeight;
+        let bestCutY = nominalCutY;
+
+        // If an unbreakable box (table row, image, line, etc.) straddles bestCutY,
+        // move the cut line above that box to avoid slicing it in half!
+        // We only pull back if it leaves the page at least 65% full (preventing bare empty space)
+        let foundIntersecting = true;
+        let iterations = 0;
+
+        while (foundIntersecting && iterations < 12) {
+          iterations++;
+          foundIntersecting = false;
+
+          for (const box of unbreakableBoxes) {
+            // Check if box is split by current bestCutY
+            if (box.top < bestCutY - 1 && box.bottom > bestCutY + 1) {
+              if (box.top > currentCanvasY + (pageCanvasHeight * 0.65)) {
+                bestCutY = Math.floor(box.top) - 1;
+                foundIntersecting = true;
+                break;
+              }
+            }
+          }
+        }
+
+        // Safety fallback if no valid split point was found
+        if (bestCutY <= currentCanvasY + 60) {
+          bestCutY = nominalCutY;
+        }
+
+        const sliceHeight = bestCutY - currentCanvasY;
         const pageCanvas = document.createElement('canvas');
         pageCanvas.width = canvas.width;
-        pageCanvas.height = srcHeight;
+        pageCanvas.height = sliceHeight;
         const ctx = pageCanvas.getContext('2d');
         if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+          ctx.fillRect(0, 0, pageCanvas.width, sliceHeight);
           ctx.drawImage(
             canvas,
-            0, srcY, canvas.width, srcHeight,
-            0, 0, pageCanvas.width, srcHeight
+            0, currentCanvasY, canvas.width, sliceHeight,
+            0, 0, pageCanvas.width, sliceHeight
           );
 
-          const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.98);
-          const renderHeight = (srcHeight * contentWidth) / canvas.width;
-          pdf.addImage(pageImgData, 'JPEG', margin, margin, contentWidth, renderHeight);
+          // Lossless PNG for sharp text and math formulas
+          const pageImgData = pageCanvas.toDataURL('image/png');
+          const renderHeight = (sliceHeight * contentWidth) / canvas.width;
+          pdf.addImage(pageImgData, 'PNG', margin, margin, contentWidth, renderHeight);
         }
+
+        currentCanvasY = bestCutY;
       }
 
       pdf.save(`${paper?.title || 'question-paper'}.pdf`);
@@ -1670,9 +1874,14 @@ export default function Editor() {
       console.error('Print Error:', err);
       showToastMessage('Failed to generate PDF');
     } finally {
+      if (clonedCache && paperElement && clonedCache.parentNode === paperElement) {
+        paperElement.removeChild(clonedCache);
+      }
+      paperElement?.classList.remove('preview-active');
       setIsExporting(false);
     }
   };
+
 
   if (!paper) {
     return (
@@ -1906,68 +2115,6 @@ export default function Editor() {
           </div>
         </div>
         <div className="toolbar-right">
-          {/* Notifications Dropdown */}
-          <div style={{ position: 'relative' }}>
-            <button
-              className="toolbar-icon-btn notifications-bell-btn"
-              onClick={() => setShowNotifications(!showNotifications)}
-              title="Notifications"
-              style={{ position: 'relative' }}
-            >
-              <Bell size={18} />
-              {notifications.filter(n => !n.read).length > 0 && (
-                <span className="notifications-badge">
-                  {notifications.filter(n => !n.read).length}
-                </span>
-              )}
-            </button>
-
-            {showNotifications && (
-              <div className="notifications-dropdown">
-                <div className="notifications-header">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Bell size={14} />
-                    <span style={{ fontWeight: 600 }}>Notifications</span>
-                  </div>
-                  {notifications.length > 0 && (
-                    <button
-                      className="hover-action-btn"
-                      onClick={() => clearNotifications()}
-                      style={{ fontSize: 11, color: 'var(--text-secondary)' }}
-                    >
-                      Clear all
-                    </button>
-                  )}
-                </div>
-                <div className="notifications-list">
-                  {notifications.length === 0 ? (
-                    <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>
-                      No notifications yet
-                    </div>
-                  ) : (
-                    notifications.map(n => (
-                      <div
-                        key={n.id}
-                        className={`notification-item ${!n.read ? 'unread' : ''}`}
-                        onClick={() => markNotificationAsRead(n.id)}
-                      >
-                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2, color: 'var(--text-primary)' }}>
-                          {n.title}
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                          {n.message}
-                        </div>
-                        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                          {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
           <button
             className={`toolbar-btn-outlined ${isQuestionBankOpen ? 'active' : ''}`}
             onClick={() => setIsQuestionBankOpen(!isQuestionBankOpen)}
@@ -1986,8 +2133,8 @@ export default function Editor() {
           <button className="toolbar-btn-accent" onClick={() => { setIsConstructorOpen(true); setActiveView('tree'); }}>
             <Layers size={14} /> Edit/View Questions
           </button>
-          <button className="toolbar-btn-accent" onClick={exportPDF} disabled={isExporting}>
-            {isExporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+          <button className="toolbar-btn-accent" onClick={exportPDF} disabled={isExporting} title="Export as PDF">
+            {isExporting ? <Loader2 size={14} className="spin" /> : <Printer size={14} />}
             {isExporting ? 'Generating...' : 'Export PDF'}
           </button>
         </div>
@@ -1997,13 +2144,27 @@ export default function Editor() {
         {`
           #printable-paper {
             --font-serif: ${paper.headerConfig?.fontFamily || "'Noto Serif', serif"};
+            --spacing-section-top: ${paper.headerConfig?.spacing?.sectionTop ?? 14}px;
+            --spacing-section-desc-gap: ${paper.headerConfig?.spacing?.sectionDescGap ?? 2}px;
+            --spacing-section-bottom: ${paper.headerConfig?.spacing?.sectionBottom ?? 8}px;
+            --spacing-question-gap: ${paper.headerConfig?.spacing?.questionGap ?? 14}px;
+            --spacing-subq-gap: ${paper.headerConfig?.spacing?.subQuestionGap ?? 8}px;
+            --paper-line-height: ${Math.min(2.4, Math.max(1.2, paper.headerConfig?.spacing?.lineHeight ?? 1.45))};
           }
           
           #printable-paper .clean-question, #printable-paper .q-number {
             font-size: ${paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}px !important;
+            line-height: var(--paper-line-height) !important;
+          }
+          #printable-paper .clean-question * {
+            line-height: inherit;
+          }
+          #printable-paper .q-text, #printable-paper .q-text p, #printable-paper .q-text div {
+            line-height: var(--paper-line-height) !important;
           }
           #printable-paper .marks-inline, #printable-paper .q-options {
             font-size: ${Math.max(10, (paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14) - 1)}px !important;
+            line-height: var(--paper-line-height) !important;
           }
           #printable-paper .section-title {
             font-size: ${paper.headerConfig?.sectionTitleFontSize || (paper.headerConfig?.fontSize ? paper.headerConfig.fontSize + 2 : 16)}px !important;
@@ -2024,8 +2185,24 @@ export default function Editor() {
             box-sizing: border-box !important;
             max-width: 100% !important;
           }
-          #printable-paper .section-divider > span {
+          #printable-paper .section-divider {
+            margin-top: var(--spacing-section-top) !important;
+            margin-bottom: var(--spacing-section-bottom) !important;
+            gap: var(--spacing-section-desc-gap) !important;
+          }
+          #printable-paper .section-divider > span, #printable-paper .section-divider-top > span {
             font-size: ${paper.headerConfig?.sectionTitleFontSize || (paper.headerConfig?.fontSize ? paper.headerConfig.fontSize + 1 : 15)}px !important;
+          }
+          #printable-paper .section-description-text {
+            padding-top: var(--spacing-section-desc-gap) !important;
+            padding-bottom: 2px !important;
+            line-height: var(--paper-line-height) !important;
+          }
+          #printable-paper .rendered-question-item {
+            margin-bottom: var(--spacing-question-gap) !important;
+          }
+          #printable-paper .q-row {
+            margin-top: var(--spacing-subq-gap) !important;
           }
         `}
       </style>
@@ -2062,28 +2239,6 @@ export default function Editor() {
             );
           })}
         </div>
-
-        <div className="paper-ribbon-subq-style">
-          <span>Sub-questions:</span>
-          <select
-            className="paper-ribbon-select"
-            value={paper.headerConfig?.subQuestionNumberingStyle || 'letters_paren'}
-            onChange={(e) => {
-              handleUpdateHeaderConfig({
-                subQuestionNumberingStyle: e.target.value as SubQuestionNumberingStyle,
-              });
-            }}
-          >
-            <option value="letters_paren">(a), (b), (c)</option>
-            <option value="roman_paren">(i), (ii), (iii)</option>
-            <option value="numbers_paren">1), 2), 3)</option>
-            <option value="numbers_paren_both">(1), (2), (3)</option>
-            <option value="letters_dot">a., b., c.</option>
-            <option value="roman_dot">i., ii., iii.</option>
-            <option value="letters_upper_paren">(A), (B), (C)</option>
-            <option value="letters_upper_dot">A., B., C.</option>
-          </select>
-        </div>
       </div>
 
       {/* QUESTION BANK DRAWER - SLIDES FROM LEFT (NO BLUR OVERLAY, REAL-TIME VISIBILITY) */}
@@ -2097,7 +2252,6 @@ export default function Editor() {
             paperSubjectName={getSubject(paper.subjectId)?.name}
             paperClassName={getClass(paper.classId)?.name}
             sections={sections}
-            topLevelQuestions={topLevelQuestions}
             onInsertSharedQuestion={async (sq, targetSec, parentQId, isOpt) => {
               const sec = targetSec || draftSection || sections[0]?.title || 'Section A';
               await importSharedQuestionToPaper(paper.id, sq, sec, 1, parentQId, isOpt);
@@ -2123,6 +2277,109 @@ export default function Editor() {
                 isOpt
               );
               showToastMessage(parentQId ? 'Added as subquestion!' : 'Question added to paper!');
+            }}
+            onInsertQuestionSet={async (parentQ, selectedSubqIds, isShared) => {
+              if (!paper) return;
+              const sec = draftSection || sections[0]?.title || 'Section A';
+              const subqs = parentQ.subquestions || [];
+              const selectedSubqs = subqs.filter(sq => selectedSubqIds.includes(sq.id));
+              const totalSelectedMarks = selectedSubqs.reduce((acc, s) => acc + (s.marks || 1), 0);
+
+              let parentPqId = '';
+              if (isShared) {
+                parentPqId = await importSharedQuestionToPaper(
+                  paper.id,
+                  { ...(parentQ as any), marks: totalSelectedMarks },
+                  sec,
+                  totalSelectedMarks
+                );
+              } else {
+                const myQ = parentQ as Question;
+                parentPqId = await createAndAddQuestion(
+                  paper.id,
+                  myQ.content,
+                  myQ.questionType,
+                  myQ.options,
+                  sec,
+                  undefined,
+                  totalSelectedMarks,
+                  paper.courseId,
+                  paper.subjectId,
+                  paper.classId,
+                  myQ.difficulty || 'medium',
+                  myQ.explanation,
+                  myQ.imageUrl,
+                  myQ.typeHeader,
+                  false,
+                  undefined,
+                  'ORIGINAL',
+                  {
+                    courseId: myQ.courseId,
+                    subjectId: myQ.subjectId,
+                    classId: myQ.classId,
+                    chapterId: myQ.chapterId,
+                    topicId: myQ.topicId,
+                    categoryId: myQ.categoryId,
+                    cognitiveLevel: myQ.cognitiveLevel,
+                  }
+                );
+              }
+
+              for (const sq of selectedSubqs) {
+                await createAndAddQuestion(
+                  paper.id,
+                  sq.content,
+                  sq.questionType || 'subjective',
+                  sq.options,
+                  sec,
+                  parentPqId,
+                  sq.marks || 1,
+                  paper.courseId,
+                  paper.subjectId,
+                  paper.classId,
+                  sq.difficulty || 'medium',
+                  sq.explanation,
+                  undefined,
+                  undefined,
+                  false,
+                  undefined,
+                  isShared ? 'SHARED' : 'ORIGINAL',
+                  {
+                    cognitiveLevel: sq.cognitiveLevel,
+                  }
+                );
+              }
+
+              showToastMessage(`Question and ${selectedSubqs.length} subquestions added to paper!`);
+            }}
+            onInsertStandaloneSubquestion={async (subq, isShared) => {
+              if (!paper) return;
+              const sec = draftSection || sections[0]?.title || 'Section A';
+
+              await createAndAddQuestion(
+                paper.id,
+                subq.content,
+                subq.questionType || 'subjective',
+                subq.options,
+                sec,
+                undefined,
+                subq.marks || 1,
+                paper.courseId,
+                paper.subjectId,
+                paper.classId,
+                subq.difficulty || 'medium',
+                subq.explanation,
+                undefined,
+                undefined,
+                false,
+                undefined,
+                isShared ? 'SHARED' : 'ORIGINAL',
+                {
+                  cognitiveLevel: subq.cognitiveLevel,
+                }
+              );
+
+              showToastMessage('Question Inserted');
             }}
             onViewQuestion={(q) => setViewingQuestion(q)}
           />
@@ -2159,7 +2416,7 @@ export default function Editor() {
                   <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                     <span className="q-number">1.</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="q-text" dangerouslySetInnerHTML={{ __html: q.content }} />
+                      <div className="q-text" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(q.content) }} />
                       {q.questionType === 'mcq' && q.options && q.options.length > 0 && (
                         <div className={`q-options q-options-${mcqLayout}`}>
                           {q.options.map((opt, i) => (
@@ -2416,10 +2673,35 @@ export default function Editor() {
             </div>
 
             {sections.length > 0 && (
-              <div style={{ display: 'flex', gap: 10, padding: '10px 20px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', flexShrink: 0, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 10, padding: '10px 20px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', flexShrink: 0, alignItems: 'center', flexWrap: 'wrap' }}>
                 <button className={`btn ${activeView === 'tree' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveView('tree')} style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center' }}>
                   <Layers size={14} style={{ marginRight: 6 }} /> Tree View
                 </button>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, marginLeft: 6 }}>
+                  <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Sub-questions:</span>
+                  <select
+                    className="property-input"
+                    style={{ padding: '4px 8px', fontSize: 12, width: 'auto' }}
+                    value={paper?.headerConfig?.subQuestionNumberingStyle || 'letters_paren'}
+                    onChange={(e) => {
+                      handleUpdateHeaderConfig({
+                        subQuestionNumberingStyle: e.target.value as SubQuestionNumberingStyle,
+                      });
+                    }}
+                    title="Default sub-question numbering format for the paper"
+                  >
+                    <option value="letters_paren">(a), (b), (c)</option>
+                    <option value="roman_paren">(i), (ii), (iii)</option>
+                    <option value="numbers_paren">1), 2), 3)</option>
+                    <option value="numbers_paren_both">(1), (2), (3)</option>
+                    <option value="letters_dot">a., b., c.</option>
+                    <option value="roman_dot">i., ii., iii.</option>
+                    <option value="letters_upper_paren">(A), (B), (C)</option>
+                    <option value="letters_upper_dot">A., B., C.</option>
+                  </select>
+                </div>
+
                 <div style={{ flex: 1 }} />
 
                 <button className={`btn ${activeView === 'add-question' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => {
@@ -2430,6 +2712,13 @@ export default function Editor() {
                   setDraftContent('');
                   setDraftOptions(['', '', '', '']);
                   setDraftSubquestions([]);
+                  setDraftCourseId(paper?.courseId || '');
+                  setDraftSubjectId(paper?.subjectId || '');
+                  setDraftCognitiveLevel(DEFAULT_COGNITIVE_LEVEL);
+                  setDraftChapterId('');
+                  setDraftTopicId('');
+                  setDraftCategoryId('');
+                  setDraftSubNumberingStyle('');
                   setQParentId('');
                   setActiveView('add-question');
                 }} style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center' }}>
@@ -2525,7 +2814,7 @@ export default function Editor() {
                                       </div>
 
                                       <div className="tree-node-content">
-                                        <div className="tree-node-text" dangerouslySetInnerHTML={{ __html: (node.text || '<em>Empty</em>').replace(/&nbsp;/g, ' ') }} />
+                                        <div className="tree-node-text" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(node.text || '<em>Empty</em>') }} />
                                         <div className="tree-node-meta">
                                           <span className="tree-node-pill marks">
                                             <strong>{node.marks}</strong> marks
@@ -2548,6 +2837,12 @@ export default function Editor() {
                                           setDraftType('subjective');
                                           setDraftContent('');
                                           setDraftOptions(['', '', '', '']);
+                                          setDraftCourseId(paper?.courseId || '');
+                                          setDraftSubjectId(paper?.subjectId || '');
+                                          setDraftCognitiveLevel(DEFAULT_COGNITIVE_LEVEL);
+                                          setDraftChapterId('');
+                                          setDraftTopicId('');
+                                          setDraftCategoryId('');
                                           setActiveView('add-question');
                                         }}>
                                           <GitFork size={12} style={{ transform: 'rotate(90deg)' }} /> Sub
@@ -2716,6 +3011,313 @@ export default function Editor() {
                     </div>
                   </div>
 
+                  {/* QUESTION CLASSIFICATION & TAXONOMY (Requirements 5, 6, 7) */}
+                  <div style={{
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    padding: '12px 14px',
+                    marginBottom: 15,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
+                        Question Classification & Taxonomy
+                      </span>
+                      <span style={{ fontSize: 11, color: '#2563eb', fontWeight: 600 }}>
+                        Course & Subject pre-selected from Paper Details
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                      {/* Course Dropdown (Pre-selected from Paper Details) */}
+                      <div>
+                        <label className="property-label" style={{ fontSize: 11, marginBottom: 2 }}>Course / Board</label>
+                        <select
+                          className="property-input"
+                          style={{ fontSize: 12, padding: '5px 8px' }}
+                          value={draftCourseId}
+                          onChange={(e) => setDraftCourseId(e.target.value)}
+                        >
+                          <option value="">No Course (Default: {getCourse(paper?.courseId)?.name || 'None'})</option>
+                          {courses.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Subject Dropdown (Pre-selected from Paper Details) */}
+                      <div>
+                        <label className="property-label" style={{ fontSize: 11, marginBottom: 2 }}>Subject</label>
+                        <select
+                          className="property-input"
+                          style={{ fontSize: 12, padding: '5px 8px' }}
+                          value={draftSubjectId}
+                          onChange={(e) => {
+                            setDraftSubjectId(e.target.value);
+                            if (draftChapterId) {
+                              const ch = chapters.find(c => c.id === draftChapterId);
+                              if (ch && ch.subjectId && ch.subjectId !== e.target.value) {
+                                setDraftChapterId('');
+                                setDraftTopicId('');
+                              }
+                            }
+                          }}
+                        >
+                          <option value="">No Subject (Default: {getSubject(paper?.subjectId)?.name || 'None'})</option>
+                          {subjects.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Chapter Dropdown */}
+                      <div>
+                        <label className="property-label" style={{ fontSize: 11, marginBottom: 2 }}>Chapter</label>
+                        {isAddingChapter ? (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <input
+                              type="text"
+                              className="property-input"
+                              style={{ fontSize: 12, padding: '4px 8px' }}
+                              autoFocus
+                              placeholder="New chapter..."
+                              value={newChapterName}
+                              onChange={(e) => setNewChapterName(e.target.value)}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter' && newChapterName.trim()) {
+                                  const cId = await createChapter(newChapterName.trim(), draftSubjectId || paper?.subjectId);
+                                  if (cId) setDraftChapterId(cId);
+                                  setIsAddingChapter(false);
+                                  setNewChapterName('');
+                                } else if (e.key === 'Escape') {
+                                  setIsAddingChapter(false);
+                                  setNewChapterName('');
+                                }
+                              }}
+                            />
+                            <button
+                              className="btn btn-primary"
+                              style={{ padding: '4px 8px', fontSize: 11 }}
+                              onClick={async () => {
+                                if (newChapterName.trim()) {
+                                  const cId = await createChapter(newChapterName.trim(), draftSubjectId || paper?.subjectId);
+                                  if (cId) setDraftChapterId(cId);
+                                }
+                                setIsAddingChapter(false);
+                                setNewChapterName('');
+                              }}
+                            >Save</button>
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '4px 6px', fontSize: 11 }}
+                              onClick={() => { setIsAddingChapter(false); setNewChapterName(''); }}
+                            >✕</button>
+                          </div>
+                        ) : (
+                          <select
+                            className="property-input"
+                            style={{ fontSize: 12, padding: '5px 8px' }}
+                            value={draftChapterId}
+                            onChange={(e) => {
+                              if (e.target.value === '__ADD_NEW__') {
+                                setIsAddingChapter(true);
+                              } else {
+                                setDraftChapterId(e.target.value);
+                                if (draftTopicId) {
+                                  const tp = topics.find(t => t.id === draftTopicId);
+                                  if (tp && tp.chapterId && tp.chapterId !== e.target.value) {
+                                    setDraftTopicId('');
+                                  }
+                                }
+                              }
+                            }}
+                          >
+                            <option value="">Select Chapter (Optional)</option>
+                            {chapters
+                              .filter(ch => !draftSubjectId || !ch.subjectId || ch.subjectId === draftSubjectId)
+                              .map(ch => (
+                                <option key={ch.id} value={ch.id}>{ch.name}</option>
+                              ))}
+                            <option value="__ADD_NEW__">+ Add New Chapter...</option>
+                          </select>
+                        )}
+                      </div>
+
+                      {/* Topic Dropdown */}
+                      <div>
+                        <label className="property-label" style={{ fontSize: 11 }}>Topic</label>
+                        {isAddingTopic ? (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <input
+                              type="text"
+                              className="property-input"
+                              style={{ fontSize: 12, padding: '4px 8px' }}
+                              autoFocus
+                              placeholder="New topic..."
+                              value={newTopicName}
+                              onChange={(e) => setNewTopicName(e.target.value)}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter' && newTopicName.trim()) {
+                                  const tId = await createTopic(newTopicName.trim(), draftChapterId || undefined);
+                                  if (tId) setDraftTopicId(tId);
+                                  setIsAddingTopic(false);
+                                  setNewTopicName('');
+                                } else if (e.key === 'Escape') {
+                                  setIsAddingTopic(false);
+                                  setNewTopicName('');
+                                }
+                              }}
+                            />
+                            <button
+                              className="btn btn-primary"
+                              style={{ padding: '4px 8px', fontSize: 11 }}
+                              onClick={async () => {
+                                if (newTopicName.trim()) {
+                                  const tId = await createTopic(newTopicName.trim(), draftChapterId || undefined);
+                                  if (tId) setDraftTopicId(tId);
+                                }
+                                setIsAddingTopic(false);
+                                setNewTopicName('');
+                              }}
+                            >Save</button>
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '4px 6px', fontSize: 11 }}
+                              onClick={() => { setIsAddingTopic(false); setNewTopicName(''); }}
+                            >✕</button>
+                          </div>
+                        ) : (
+                          <select
+                            className="property-input"
+                            style={{ fontSize: 12, padding: '5px 8px' }}
+                            value={draftTopicId}
+                            onChange={(e) => {
+                              if (e.target.value === '__ADD_NEW__') {
+                                setIsAddingTopic(true);
+                              } else {
+                                setDraftTopicId(e.target.value);
+                              }
+                            }}
+                          >
+                            <option value="">Select Topic (Optional)</option>
+                            {topics
+                              .filter(tp => !draftChapterId || !tp.chapterId || tp.chapterId === draftChapterId)
+                              .map(tp => (
+                                <option key={tp.id} value={tp.id}>{tp.name}</option>
+                              ))}
+                            <option value="__ADD_NEW__">+ Add New Topic...</option>
+                          </select>
+                        )}
+                      </div>
+
+                      {/* Category / Stream */}
+                      <div>
+                        <label className="property-label" style={{ fontSize: 11 }}>Category / Stream</label>
+                        {isAddingCategory ? (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <input
+                              type="text"
+                              className="property-input"
+                              style={{ fontSize: 12, padding: '4px 8px' }}
+                              autoFocus
+                              placeholder="New stream/category..."
+                              value={newCategoryName}
+                              onChange={(e) => setNewCategoryName(e.target.value)}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter' && newCategoryName.trim()) {
+                                  const catId = await createCategory(newCategoryName.trim());
+                                  if (catId) setDraftCategoryId(catId);
+                                  setIsAddingCategory(false);
+                                  setNewCategoryName('');
+                                } else if (e.key === 'Escape') {
+                                  setIsAddingCategory(false);
+                                  setNewCategoryName('');
+                                }
+                              }}
+                            />
+                            <button
+                              className="btn btn-primary"
+                              style={{ padding: '4px 8px', fontSize: 11 }}
+                              onClick={async () => {
+                                if (newCategoryName.trim()) {
+                                  const catId = await createCategory(newCategoryName.trim());
+                                  if (catId) setDraftCategoryId(catId);
+                                }
+                                setIsAddingCategory(false);
+                                setNewCategoryName('');
+                              }}
+                            >Save</button>
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '4px 6px', fontSize: 11 }}
+                              onClick={() => { setIsAddingCategory(false); setNewCategoryName(''); }}
+                            >✕</button>
+                          </div>
+                        ) : (
+                          <select
+                            className="property-input"
+                            style={{ fontSize: 12, padding: '5px 8px' }}
+                            value={draftCategoryId}
+                            onChange={(e) => {
+                              if (e.target.value === '__ADD_NEW__') {
+                                setIsAddingCategory(true);
+                              } else {
+                                setDraftCategoryId(e.target.value);
+                              }
+                            }}
+                          >
+                            <option value="">Select Stream / Category (Optional)</option>
+                            {categories.map(c => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                            <option value="__ADD_NEW__">+ Add New Stream/Category...</option>
+                          </select>
+                        )}
+                      </div>
+
+                      {/* Cognitive Level Dropdown (Requirement 6) */}
+                      <div>
+                        <label className="property-label" style={{ fontSize: 11 }}>Cognitive Level (Bloom's)</label>
+                        <select
+                          className="property-input"
+                          style={{ fontSize: 12, padding: '5px 8px' }}
+                          value={draftCognitiveLevel}
+                          onChange={(e) => setDraftCognitiveLevel(e.target.value as CognitiveLevel)}
+                        >
+                          {COGNITIVE_LEVELS.map(cl => (
+                            <option key={cl.value} value={cl.value}>
+                              {cl.label}{cl.value === 'understand' ? ' (Default)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Sub-question Numbering Style (Requirement 5) */}
+                      <div>
+                        <label className="property-label" style={{ fontSize: 11 }}>Sub-question Numbering</label>
+                        <select
+                          className="property-input"
+                          style={{ fontSize: 12, padding: '5px 8px' }}
+                          value={draftSubNumberingStyle}
+                          onChange={(e) => setDraftSubNumberingStyle(e.target.value as SubQuestionNumberingStyle)}
+                        >
+                          <option value="">Inherit from paper ({paper?.headerConfig?.subQuestionNumberingStyle || 'letters_paren'})</option>
+                          <option value="letters_paren">(a), (b), (c)</option>
+                          <option value="roman_paren">(i), (ii), (iii)</option>
+                          <option value="numbers_paren">1), 2), 3)</option>
+                          <option value="numbers_paren_both">(1), (2), (3)</option>
+                          <option value="letters_dot">a., b., c.</option>
+                          <option value="roman_dot">i., ii., iii.</option>
+                          <option value="letters_upper_paren">(A), (B), (C)</option>
+                          <option value="letters_upper_dot">A., B., C.</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="property-field" style={{ marginBottom: 15 }}>
                     <label className="property-label">{draftType === 'text' ? 'Passage / Text Content' : 'Question Content'}</label>
                     <FullQuill value={draftContent} onChange={setDraftContent} placeholder={draftType === 'text' ? 'Enter reading passage or instructions...' : 'Enter your question...'} openMathDialog={openMathDialog} toolbarId="question-toolbar" onImageClick={handleQuillImageClick} />
@@ -2782,8 +3384,8 @@ export default function Editor() {
 
                         {sq.isExpanded && (
                           <div style={{ padding: '15px' }}>
-                            <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'flex-end' }}>
-                              <div className="property-field" style={{ flex: 1, marginBottom: 0 }}>
+                            <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                              <div className="property-field" style={{ flex: 1, minWidth: 120, marginBottom: 0 }}>
                                 <label className="property-label">Question Type</label>
                                 <select className="property-input" value={sq.type} onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'type', e.target.value)}>
                                   <option value="subjective">Subjective</option>
@@ -2792,11 +3394,43 @@ export default function Editor() {
                                 </select>
                               </div>
                               {sq.type !== 'text' && (
-                                <div className="property-field" style={{ flex: 1, marginBottom: 0 }}>
+                                <div className="property-field" style={{ flex: 1, minWidth: 80, marginBottom: 0 }}>
                                   <label className="property-label">Marks</label>
                                   <input type="number" className="property-input" value={sq.marks} onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'marks', parseInt(e.target.value) || 1)} min={1} />
                                 </div>
                               )}
+                              <div className="property-field" style={{ flex: 1, minWidth: 130, marginBottom: 0 }}>
+                                <label className="property-label">Cognitive Level</label>
+                                <select
+                                  className="property-input"
+                                  value={sq.cognitiveLevel || 'understand'}
+                                  onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'cognitiveLevel', e.target.value as CognitiveLevel)}
+                                >
+                                  {COGNITIVE_LEVELS.map(cl => (
+                                    <option key={cl.value} value={cl.value}>
+                                      {cl.label}{cl.value === 'understand' ? ' (Default)' : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="property-field" style={{ flex: 1, minWidth: 140, marginBottom: 0 }}>
+                                <label className="property-label">Child Sub-Q Format</label>
+                                <select
+                                  className="property-input"
+                                  value={sq.subNumberingStyle || ''}
+                                  onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'subNumberingStyle', (e.target.value || undefined) as any)}
+                                >
+                                  <option value="">Inherit</option>
+                                  <option value="letters_paren">(a), (b), (c)</option>
+                                  <option value="roman_paren">(i), (ii), (iii)</option>
+                                  <option value="numbers_paren">1), 2), 3)</option>
+                                  <option value="numbers_paren_both">(1), (2), (3)</option>
+                                  <option value="letters_dot">a., b., c.</option>
+                                  <option value="roman_dot">i., ii., iii.</option>
+                                  <option value="letters_upper_paren">(A), (B), (C)</option>
+                                  <option value="letters_upper_dot">A., B., C.</option>
+                                </select>
+                              </div>
                               <div className="property-field" style={{ flex: '0 0 auto', marginBottom: 0, paddingBottom: 6 }}>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, userSelect: 'none' }}>
                                   <input
@@ -2978,7 +3612,217 @@ export default function Editor() {
                 </div>
               </div>
 
+              <div className="drawer-section-divider">Vertical Spacing Controls (Print & Layout)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="property-field">
+                  <label className="property-label">Section Top Spacing (px)</label>
+                  <LazyNumberInput
+                    className="property-input"
+                    value={paper.headerConfig?.spacing?.sectionTop ?? 14}
+                    onChange={(val) => handleUpdateHeaderConfig({
+                      spacing: { ...(paper.headerConfig?.spacing || {}), sectionTop: val }
+                    })}
+                    fallback={14}
+                  />
+                </div>
+                <div className="property-field">
+                  <label className="property-label">Section to Description Gap (px)</label>
+                  <LazyNumberInput
+                    className="property-input"
+                    value={paper.headerConfig?.spacing?.sectionDescGap ?? 2}
+                    onChange={(val) => handleUpdateHeaderConfig({
+                      spacing: { ...(paper.headerConfig?.spacing || {}), sectionDescGap: val }
+                    })}
+                    fallback={2}
+                  />
+                </div>
+                <div className="property-field">
+                  <label className="property-label">Section Bottom Spacing (px)</label>
+                  <LazyNumberInput
+                    className="property-input"
+                    value={paper.headerConfig?.spacing?.sectionBottom ?? 8}
+                    onChange={(val) => handleUpdateHeaderConfig({
+                      spacing: { ...(paper.headerConfig?.spacing || {}), sectionBottom: val }
+                    })}
+                    fallback={8}
+                  />
+                </div>
+                <div className="property-field">
+                  <label className="property-label">Question Spacing (px)</label>
+                  <LazyNumberInput
+                    className="property-input"
+                    value={paper.headerConfig?.spacing?.questionGap ?? 14}
+                    onChange={(val) => handleUpdateHeaderConfig({
+                      spacing: { ...(paper.headerConfig?.spacing || {}), questionGap: val }
+                    })}
+                    fallback={14}
+                  />
+                </div>
+                <div className="property-field">
+                  <label className="property-label">Sub-question Spacing (px)</label>
+                  <LazyNumberInput
+                    className="property-input"
+                    value={paper.headerConfig?.spacing?.subQuestionGap ?? 8}
+                    onChange={(val) => handleUpdateHeaderConfig({
+                      spacing: { ...(paper.headerConfig?.spacing || {}), subQuestionGap: val }
+                    })}
+                    fallback={8}
+                  />
+                </div>
+                {/* VERTICAL TEXT SPACING (LINE HEIGHT) SLIDER */}
+                <div
+                  className="property-field"
+                  style={{
+                    gridColumn: '1 / -1',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 10,
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    marginTop: 4,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <label className="property-label" style={{ fontWeight: 700, margin: 0, fontSize: 12.5, color: '#1e293b' }}>
+                        Vertical Text Spacing
+                      </label>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: '1px 6px',
+                          background: '#ecfdf5',
+                          color: '#059669',
+                          borderRadius: 4,
+                          border: '1px solid #a7f3d0'
+                        }}
+                      >
+                        Bounded
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: '#2563eb',
+                          background: '#eff6ff',
+                          padding: '2px 8px',
+                          borderRadius: 6,
+                          border: '1px solid #bfdbfe',
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {(Math.min(2.40, Math.max(1.20, paper.headerConfig?.spacing?.lineHeight ?? 1.45))).toFixed(2)}x
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Range Slider with strict bounds */}
+                  <div style={{ position: 'relative', width: '100%', paddingTop: 2 }}>
+                    <input
+                      type="range"
+                      min="1.20"
+                      max="2.40"
+                      step="0.05"
+                      value={Math.min(2.40, Math.max(1.20, paper.headerConfig?.spacing?.lineHeight ?? 1.45))}
+                      onChange={(e) => {
+                        const raw = parseFloat(e.target.value);
+                        const val = Math.min(2.40, Math.max(1.20, Number.isFinite(raw) ? raw : 1.45));
+                        handleUpdateHeaderConfig({
+                          spacing: { ...(paper.headerConfig?.spacing || {}), lineHeight: Math.round(val * 100) / 100 }
+                        });
+                      }}
+                      style={{
+                        width: '100%',
+                        accentColor: '#2563eb',
+                        cursor: 'pointer',
+                        height: 6,
+                        borderRadius: 4,
+                      }}
+                    />
+                  </div>
+
+                  {/* Min / Max Labels */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#64748b', fontWeight: 500, marginTop: -2 }}>
+                    <span>Min: 1.20x <span style={{ color: '#059669', fontSize: 9.5 }}>(Anti-overlap limit)</span></span>
+                    <span>1.45x (Standard)</span>
+                    <span>Max: 2.40x</span>
+                  </div>
+
+                  {/* Anti-Overlap Helper Info */}
+                  <div
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 1.35,
+                      color: '#0369a1',
+                      background: '#f0f9ff',
+                      border: '1px solid #e0f2fe',
+                      borderRadius: 6,
+                      padding: '6px 8px',
+                    }}
+                  >
+                    <strong>Overlap Protection:</strong> Lower limit is fixed at 1.20x to prevent mathematical formulas, subscripts, fractions, and adjacent lines from colliding or overlapping.
+                  </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+                    {[
+                      { label: 'Compact', val: 1.25 },
+                      { label: 'Standard', val: 1.45 },
+                      { label: 'Relaxed', val: 1.75 },
+                      { label: 'Spacious', val: 2.00 },
+                    ].map((preset) => {
+                      const currentVal = Math.min(2.40, Math.max(1.20, paper.headerConfig?.spacing?.lineHeight ?? 1.45));
+                      const isSelected = Math.abs(currentVal - preset.val) < 0.03;
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          className={`btn ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
+                          style={{
+                            padding: '3px 6px',
+                            fontSize: 10.5,
+                            flex: 1,
+                            justifyContent: 'center',
+                            fontWeight: isSelected ? 700 : 500,
+                            borderRadius: 6,
+                          }}
+                          onClick={() => {
+                            handleUpdateHeaderConfig({
+                              spacing: { ...(paper.headerConfig?.spacing || {}), lineHeight: preset.val }
+                            });
+                          }}
+                        >
+                          {preset.label} ({preset.val}x)
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
               <div className="drawer-section-divider">Institution</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0 4px 0' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Show Institution on Paper</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Display institution heading on paper</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={paper.headerConfig?.visibleHeaderFields?.schoolName !== false}
+                  onChange={(e) => handleUpdateHeaderConfig({
+                    visibleHeaderFields: {
+                      ...(paper.headerConfig?.visibleHeaderFields || {}),
+                      schoolName: e.target.checked
+                    }
+                  })}
+                  style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }}
+                />
+              </div>
               <div className="property-field">
                 <label className="property-label">Institution Name</label>
                 <input
@@ -3080,6 +3924,23 @@ export default function Editor() {
               </div>
 
               <div className="drawer-section-divider">Instructions</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0 4px 0' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Show Instructions on Paper</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Display exam instructions below the header</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={paper.headerConfig?.visibleHeaderFields?.instructions !== false}
+                  onChange={(e) => handleUpdateHeaderConfig({
+                    visibleHeaderFields: {
+                      ...(paper.headerConfig?.visibleHeaderFields || {}),
+                      instructions: e.target.checked
+                    }
+                  })}
+                  style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }}
+                />
+              </div>
               <div className="property-field">
                 <label className="property-label">Instructions</label>
                 <FullQuill

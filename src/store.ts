@@ -12,18 +12,81 @@ import type {
   PaperSection,
   SharedQuestion,
   AppNotification,
+  Chapter,
+  Topic,
+  Category,
+  QuestionMeta,
 } from './types';
+import { DEFAULT_COGNITIVE_LEVEL } from './types';
 import { supabase } from './supabase';
 import { computeContentHash, calculateTextSimilarity } from './utils/sharedBank';
 import { INITIAL_SHARED_QUESTIONS } from './utils/seedSharedQuestions';
 
 const LOCAL_SHARED_QUESTIONS_KEY = 'questforma_shared_questions_v1';
 const LOCAL_NOTIFICATIONS_KEY = 'questforma_notifications_v1';
+const LOCAL_LOOKUPS_KEY = 'questforma_lookups_v1';
+
+/**
+ * Columns introduced by `classification_migration.sql`. If the migration has not been
+ * applied yet, PostgREST rejects the whole write; we retry without these columns so
+ * the core data (question text, marks, etc.) is never lost.
+ */
+const MIGRATION_OPTIONAL_COLUMNS = new Set([
+  'chapter_id', 'topic_id', 'category_id', 'cognitive_level', 'marks',
+  'sub_numbering_style', 'course_name', 'subject_name', 'class_name', 'chapter', 'category',
+]);
+
+type WriteResult = PromiseLike<{ error: { code?: string; message: string } | null }>;
+
+async function resilientWrite(
+  op: (row: Record<string, unknown>) => WriteResult,
+  row: Record<string, unknown>,
+  label: string,
+) {
+  let { error } = await op(row);
+  if (error && (error.code === 'PGRST204' || error.code === '42703')) {
+    const stripped = Object.fromEntries(
+      Object.entries(row).filter(([k]) => !MIGRATION_OPTIONAL_COLUMNS.has(k)),
+    );
+    ({ error } = await op(stripped));
+    if (!error) {
+      console.warn(`[${label}] Saved without classification fields — run classification_migration.sql in Supabase.`);
+    }
+  }
+  if (error) console.error(`[${label}]`, error.message);
+  return error;
+}
+
+interface LocalLookups { chapters: Chapter[]; topics: Topic[]; categories: Category[] }
+
+function getStoredLookups(userId: string): LocalLookups {
+  try {
+    const raw = localStorage.getItem(`${LOCAL_LOOKUPS_KEY}_${userId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { chapters: [], topics: [], categories: [] };
+}
+
+function saveLookups(userId: string, data: LocalLookups) {
+  try {
+    localStorage.setItem(`${LOCAL_LOOKUPS_KEY}_${userId}`, JSON.stringify(data));
+  } catch {}
+}
 
 function getStoredLocalSharedQuestions(): SharedQuestion[] {
   try {
     const raw = localStorage.getItem(LOCAL_SHARED_QUESTIONS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed: SharedQuestion[] = JSON.parse(raw);
+      // Ensure seed multi-part questions exist in stored list
+      const hasEcosystem = parsed.some(q => q.id === 'shared-q-ecosystem');
+      if (!hasEcosystem) {
+        const merged = [...INITIAL_SHARED_QUESTIONS, ...parsed.filter(p => !INITIAL_SHARED_QUESTIONS.some(i => i.id === p.id))];
+        saveLocalSharedQuestions(merged);
+        return merged;
+      }
+      return parsed;
+    }
   } catch {}
   return INITIAL_SHARED_QUESTIONS;
 }
@@ -53,6 +116,9 @@ interface AppState {
   courses: Course[];
   subjects: Subject[];
   classes: Class[];
+  chapters: Chapter[];
+  topics: Topic[];
+  categories: Category[];
   questionPapers: QuestionPaper[];
   questions: Question[];
   paperQuestions: Map<string, PaperQuestion[]>;
@@ -87,6 +153,14 @@ interface AppState {
   createClass: (name: string) => Promise<string>;
   updateClass: (id: string, name: string) => Promise<void>;
   deleteClass: (id: string) => Promise<void>;
+
+  fetchLookups: () => Promise<void>;
+  createChapter: (name: string, subjectId?: string) => Promise<string>;
+  deleteChapter: (id: string) => Promise<void>;
+  createTopic: (name: string, chapterId?: string) => Promise<string>;
+  deleteTopic: (id: string) => Promise<void>;
+  createCategory: (name: string) => Promise<string>;
+  deleteCategory: (id: string) => Promise<void>;
   
   createQuestionPaper: (title: string, date?: string, maxMarks?: number, courseId?: string, subjectId?: string, classId?: string, instructions?: string, duration?: number) => Promise<string>;
   updateQuestionPaper: (id: string, updates: Partial<QuestionPaper>) => Promise<void>;
@@ -118,10 +192,12 @@ interface AppState {
     typeHeader?: string,
     isOptional?: boolean,
     parentSharedId?: string,
-    originType?: 'ORIGINAL' | 'SHARED' | 'FORKED'
+    originType?: 'ORIGINAL' | 'SHARED' | 'FORKED',
+    meta?: QuestionMeta,
+    subNumberingStyle?: PaperQuestion['subNumberingStyle']
   ) => Promise<string>;
 
-  shareQuestionToBank: (question: { content: string; questionType: QuestionType; options?: string[]; difficulty?: Difficulty; typeHeader?: string; topic?: string }) => Promise<string | null>;
+  shareQuestionToBank: (question: { content: string; questionType: QuestionType; options?: string[]; difficulty?: Difficulty; typeHeader?: string; topic?: string; meta?: QuestionMeta; marks?: number }) => Promise<string | null>;
   importSharedQuestionToPaper: (paperId: string, sharedQ: SharedQuestion, section?: string, marks?: number, parentId?: string, isOptional?: boolean) => Promise<string>;
   sendQuestionUsageNotification: (sharedQ: SharedQuestion) => Promise<void>;
   markNotificationAsRead: (id: string) => Promise<void>;
@@ -135,6 +211,9 @@ export const useStore = create<AppState>()((set, get) => ({
   courses: [],
   subjects: [],
   classes: [],
+  chapters: [],
+  topics: [],
+  categories: [],
   questionPapers: [],
   questions: [],
   paperQuestions: new Map(),
@@ -152,6 +231,9 @@ export const useStore = create<AppState>()((set, get) => ({
       courses: [],
       subjects: [],
       classes: [],
+      chapters: [],
+      topics: [],
+      categories: [],
       questionPapers: [],
       questions: [],
       paperQuestions: new Map(),
@@ -310,6 +392,11 @@ export const useStore = create<AppState>()((set, get) => ({
         explanation: q.explanation,
         imageUrl: q.image_url,
         typeHeader: q.type_header,
+        chapterId: q.chapter_id || undefined,
+        topicId: q.topic_id || undefined,
+        categoryId: q.category_id || undefined,
+        cognitiveLevel: q.cognitive_level || DEFAULT_COGNITIVE_LEVEL,
+        marks: q.marks ?? undefined,
         createdAt: new Date(q.created_at).getTime(),
         updatedAt: new Date(q.updated_at).getTime(),
       }));
@@ -336,6 +423,7 @@ export const useStore = create<AppState>()((set, get) => ({
         parentSharedId: item.parent_shared_id || null,
         originType: item.origin_type || 'ORIGINAL',
         isOptional: item.is_optional || false,
+        subNumberingStyle: item.sub_numbering_style || null,
         createdAt: new Date(item.created_at).getTime(),
         updatedAt: new Date(item.updated_at).getTime(),
       }));
@@ -370,6 +458,13 @@ export const useStore = create<AppState>()((set, get) => ({
           difficulty: row.difficulty || 'medium',
           typeHeader: row.type_header,
           usageCount: row.usage_count || 0,
+          courseName: row.course_name || undefined,
+          subjectName: row.subject_name || undefined,
+          className: row.class_name || undefined,
+          chapter: row.chapter || undefined,
+          category: row.category || undefined,
+          cognitiveLevel: row.cognitive_level || DEFAULT_COGNITIVE_LEVEL,
+          marks: row.marks ?? undefined,
           createdAt: new Date(row.created_at).getTime(),
         }));
         set({ sharedQuestions: list });
@@ -520,6 +615,106 @@ export const useStore = create<AppState>()((set, get) => ({
   deleteClass: async (id: string) => {
     set((state) => ({ classes: state.classes.filter(c => c.id !== id) }));
     await supabase.from('classes').delete().eq('id', id);
+  },
+
+  fetchLookups: async () => {
+    const { user } = get();
+    if (!user?.id) return;
+    const local = getStoredLookups(user.id);
+
+    const [chRes, tpRes, ctRes] = await Promise.all([
+      supabase.from('chapters').select('*').eq('teacher_id', user.id).order('name'),
+      supabase.from('topics').select('*').eq('teacher_id', user.id).order('name'),
+      supabase.from('categories').select('*').eq('teacher_id', user.id).order('name'),
+    ]);
+
+    const chapters: Chapter[] = !chRes.error && chRes.data
+      ? chRes.data.map(r => ({ id: r.id, teacherId: r.teacher_id, name: r.name, subjectId: r.subject_id || undefined, createdAt: new Date(r.created_at).getTime() }))
+      : local.chapters;
+    const topics: Topic[] = !tpRes.error && tpRes.data
+      ? tpRes.data.map(r => ({ id: r.id, teacherId: r.teacher_id, name: r.name, chapterId: r.chapter_id || undefined, createdAt: new Date(r.created_at).getTime() }))
+      : local.topics;
+    const categories: Category[] = !ctRes.error && ctRes.data
+      ? ctRes.data.map(r => ({ id: r.id, teacherId: r.teacher_id, name: r.name, createdAt: new Date(r.created_at).getTime() }))
+      : local.categories;
+
+    set({ chapters, topics, categories });
+    saveLookups(user.id, { chapters, topics, categories });
+  },
+
+  createChapter: async (name: string, subjectId?: string) => {
+    const { user } = get();
+    if (!user?.id) return '';
+    const existing = get().chapters.find(c => c.name.toLowerCase() === name.toLowerCase() && (c.subjectId || '') === (subjectId || ''));
+    if (existing) return existing.id;
+    const id = generateId();
+    const chapter: Chapter = { id, teacherId: user.id, name, subjectId, createdAt: Date.now() };
+    set((s) => ({ chapters: [...s.chapters, chapter].sort((a, b) => a.name.localeCompare(b.name)) }));
+    const { chapters, topics, categories } = get();
+    saveLookups(user.id, { chapters, topics, categories });
+    const { error } = await supabase.from('chapters').insert({ id, teacher_id: user.id, name, subject_id: subjectId || null });
+    if (error) console.warn('Chapter saved locally only:', error.message);
+    return id;
+  },
+
+  deleteChapter: async (id: string) => {
+    const { user } = get();
+    set((s) => ({ chapters: s.chapters.filter(c => c.id !== id) }));
+    if (user?.id) {
+      const { chapters, topics, categories } = get();
+      saveLookups(user.id, { chapters, topics, categories });
+    }
+    await supabase.from('chapters').delete().eq('id', id);
+  },
+
+  createTopic: async (name: string, chapterId?: string) => {
+    const { user } = get();
+    if (!user?.id) return '';
+    const existing = get().topics.find(t => t.name.toLowerCase() === name.toLowerCase() && (t.chapterId || '') === (chapterId || ''));
+    if (existing) return existing.id;
+    const id = generateId();
+    const topic: Topic = { id, teacherId: user.id, name, chapterId, createdAt: Date.now() };
+    set((s) => ({ topics: [...s.topics, topic].sort((a, b) => a.name.localeCompare(b.name)) }));
+    const { chapters, topics, categories } = get();
+    saveLookups(user.id, { chapters, topics, categories });
+    const { error } = await supabase.from('topics').insert({ id, teacher_id: user.id, name, chapter_id: chapterId || null });
+    if (error) console.warn('Topic saved locally only:', error.message);
+    return id;
+  },
+
+  deleteTopic: async (id: string) => {
+    const { user } = get();
+    set((s) => ({ topics: s.topics.filter(t => t.id !== id) }));
+    if (user?.id) {
+      const { chapters, topics, categories } = get();
+      saveLookups(user.id, { chapters, topics, categories });
+    }
+    await supabase.from('topics').delete().eq('id', id);
+  },
+
+  createCategory: async (name: string) => {
+    const { user } = get();
+    if (!user?.id) return '';
+    const existing = get().categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
+    const id = generateId();
+    const category: Category = { id, teacherId: user.id, name, createdAt: Date.now() };
+    set((s) => ({ categories: [...s.categories, category].sort((a, b) => a.name.localeCompare(b.name)) }));
+    const { chapters, topics, categories } = get();
+    saveLookups(user.id, { chapters, topics, categories });
+    const { error } = await supabase.from('categories').insert({ id, teacher_id: user.id, name });
+    if (error) console.warn('Category saved locally only:', error.message);
+    return id;
+  },
+
+  deleteCategory: async (id: string) => {
+    const { user } = get();
+    set((s) => ({ categories: s.categories.filter(c => c.id !== id) }));
+    if (user?.id) {
+      const { chapters, topics, categories } = get();
+      saveLookups(user.id, { chapters, topics, categories });
+    }
+    await supabase.from('categories').delete().eq('id', id);
   },
 
   createQuestionPaper: async (title: string, date?: string, maxMarks?: number, courseId?: string, subjectId?: string, classId?: string, instructions?: string, duration?: number) => {
@@ -691,8 +886,17 @@ export const useStore = create<AppState>()((set, get) => ({
     if (updates.explanation !== undefined) supabaseUpdates.explanation = updates.explanation;
     if (updates.imageUrl !== undefined) supabaseUpdates.image_url = updates.imageUrl;
     if (updates.typeHeader !== undefined) supabaseUpdates.type_header = updates.typeHeader;
+    if (updates.chapterId !== undefined) supabaseUpdates.chapter_id = updates.chapterId || null;
+    if (updates.topicId !== undefined) supabaseUpdates.topic_id = updates.topicId || null;
+    if (updates.categoryId !== undefined) supabaseUpdates.category_id = updates.categoryId || null;
+    if (updates.cognitiveLevel !== undefined) supabaseUpdates.cognitive_level = updates.cognitiveLevel;
+    if (updates.marks !== undefined) supabaseUpdates.marks = updates.marks;
+    // Normalise empty-string foreign keys to NULL
+    for (const k of ['course_id', 'subject_id', 'class_id']) {
+      if (supabaseUpdates[k] === '') supabaseUpdates[k] = null;
+    }
 
-    await supabase.from('questions').update(supabaseUpdates).eq('id', id);
+    await resilientWrite((row) => supabase.from('questions').update(row).eq('id', id), supabaseUpdates, 'updateQuestion');
   },
 
   deleteQuestion: async (id: string) => {
@@ -783,8 +987,9 @@ export const useStore = create<AppState>()((set, get) => ({
     if (updates.isOptional !== undefined) supabaseUpdates.is_optional = updates.isOptional;
     if (updates.parentSharedId !== undefined) supabaseUpdates.parent_shared_id = updates.parentSharedId;
     if (updates.originType !== undefined) supabaseUpdates.origin_type = updates.originType;
+    if (updates.subNumberingStyle !== undefined) supabaseUpdates.sub_numbering_style = updates.subNumberingStyle || null;
 
-    await supabase.from('paper_questions').update(supabaseUpdates).eq('id', id);
+    await resilientWrite((row) => supabase.from('paper_questions').update(row).eq('id', id), supabaseUpdates, 'updatePaperQuestion');
   },
 
   removeQuestionFromPaper: async (paperId: string, questionId: string) => {
@@ -848,7 +1053,9 @@ export const useStore = create<AppState>()((set, get) => ({
     typeHeader?: string,
     isOptional?: boolean,
     parentSharedId?: string,
-    originType: 'ORIGINAL' | 'SHARED' | 'FORKED' = 'ORIGINAL'
+    originType: 'ORIGINAL' | 'SHARED' | 'FORKED' = 'ORIGINAL',
+    meta?: QuestionMeta,
+    subNumberingStyle?: PaperQuestion['subNumberingStyle']
   ) => {
     const { user, questionPapers, shareQuestionToBank } = get();
     if (!user?.id) return '';
@@ -858,20 +1065,32 @@ export const useStore = create<AppState>()((set, get) => ({
     const paper = questionPapers.find(qp => qp.id === paperId);
     const paperQuestionsList = get().paperQuestions.get(paperId) || [];
     const orderIndex = paperQuestionsList.length;
+    const finalMarks = questionType === 'text' ? 0 : (marks ?? 1);
+
+    // Course / Subject / Class default to the paper details unless explicitly chosen
+    const resolvedCourseId = meta?.courseId || courseId || paper?.courseId || undefined;
+    const resolvedSubjectId = meta?.subjectId || subjectId || paper?.subjectId || undefined;
+    const resolvedClassId = meta?.classId || classId || paper?.classId || undefined;
+    const cognitiveLevel = meta?.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL;
 
     const newQuestion: Question = {
       id: questionId,
       teacherId: user.id,
       content,
-      courseId,
-      subjectId: subjectId || paper?.subjectId,
-      classId: classId || paper?.classId,
+      courseId: resolvedCourseId,
+      subjectId: resolvedSubjectId,
+      classId: resolvedClassId,
       questionType,
       options: options || [],
       difficulty: difficulty || 'medium',
       explanation,
       imageUrl,
       typeHeader,
+      chapterId: meta?.chapterId,
+      topicId: meta?.topicId,
+      categoryId: meta?.categoryId,
+      cognitiveLevel,
+      marks: finalMarks,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -882,11 +1101,12 @@ export const useStore = create<AppState>()((set, get) => ({
       questionId,
       section: section ?? '',
       parentId,
-      marks: questionType === 'text' ? 0 : (marks ?? 1),
+      marks: finalMarks,
       orderIndex,
       isOptional: Boolean(isOptional),
       parentSharedId: parentSharedId || null,
       originType,
+      subNumberingStyle: subNumberingStyle || null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -896,33 +1116,39 @@ export const useStore = create<AppState>()((set, get) => ({
       paperQuestions: new Map(state.paperQuestions).set(paperId, [...paperQuestionsList, newPQ]),
     }));
 
-    await supabase.from('questions').insert({
+    await resilientWrite((row) => supabase.from('questions').insert(row), {
       id: questionId,
       teacher_id: user.id,
       content,
-      course_id: courseId,
-      subject_id: subjectId || paper?.subjectId,
-      class_id: classId || paper?.classId,
+      course_id: resolvedCourseId || null,
+      subject_id: resolvedSubjectId || null,
+      class_id: resolvedClassId || null,
       question_type: questionType,
       options: options || [],
       difficulty: difficulty || 'medium',
       explanation,
       image_url: imageUrl,
       type_header: typeHeader,
-    });
+      chapter_id: meta?.chapterId || null,
+      topic_id: meta?.topicId || null,
+      category_id: meta?.categoryId || null,
+      cognitive_level: cognitiveLevel,
+      marks: finalMarks,
+    }, 'createQuestion');
 
-    await supabase.from('paper_questions').insert({
+    await resilientWrite((row) => supabase.from('paper_questions').insert(row), {
       id: pqId,
       paper_id: paperId,
       question_id: questionId,
       section: section ?? '',
       parent_id: parentId || null,
-      marks: questionType === 'text' ? 0 : (marks ?? 1),
+      marks: finalMarks,
       order_index: orderIndex,
       is_optional: isOptional || false,
       parent_shared_id: parentSharedId || null,
       origin_type: originType,
-    });
+      sub_numbering_style: subNumberingStyle || null,
+    }, 'addPaperQuestion');
 
     // Shared Question Bank: Auto-contribute if user's questions are NOT private
     if (originType === 'ORIGINAL' && !user.keepQuestionsPrivate && content.trim().length > 10) {
@@ -932,6 +1158,8 @@ export const useStore = create<AppState>()((set, get) => ({
         options,
         difficulty,
         typeHeader,
+        meta: { ...meta, courseId: resolvedCourseId, subjectId: resolvedSubjectId, classId: resolvedClassId, cognitiveLevel },
+        marks: finalMarks,
       });
     }
 
@@ -945,9 +1173,22 @@ export const useStore = create<AppState>()((set, get) => ({
     difficulty,
     typeHeader,
     topic,
+    meta,
+    marks,
   }) => {
-    const { user, sharedQuestions } = get();
+    const { user, sharedQuestions, courses, subjects, classes, chapters, topics, categories } = get();
     if (!user || user.keepQuestionsPrivate) return null;
+
+    const nameOf = <T extends { id: string; name: string }>(list: T[], id?: string) => (id ? list.find(x => x.id === id)?.name : undefined);
+    const topicName = topic || nameOf(topics, meta?.topicId);
+    const names = {
+      courseName: nameOf(courses, meta?.courseId),
+      subjectName: nameOf(subjects, meta?.subjectId),
+      className: nameOf(classes, meta?.classId),
+      chapter: nameOf(chapters, meta?.chapterId),
+      category: nameOf(categories, meta?.categoryId),
+    };
+    const cognitiveLevel = meta?.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL;
 
     const hash = await computeContentHash(content);
 
@@ -969,12 +1210,19 @@ export const useStore = create<AppState>()((set, get) => ({
       contentHash: hash,
       createdByUserId: user.id,
       authorName: user.fullName || 'Teacher',
-      topic: topic || 'General',
+      topic: topicName || 'General',
       questionType,
       options: options || [],
       difficulty: difficulty || 'medium',
       typeHeader,
       usageCount: 0,
+      courseName: names.courseName,
+      subjectName: names.subjectName,
+      className: names.className,
+      chapter: names.chapter,
+      category: names.category,
+      cognitiveLevel,
+      marks: marks ?? undefined,
       createdAt: Date.now(),
     };
 
@@ -982,31 +1230,42 @@ export const useStore = create<AppState>()((set, get) => ({
     set({ sharedQuestions: updated });
     saveLocalSharedQuestions(updated);
 
-    try {
-      await supabase.from('shared_questions').insert({
-        id: newSharedId,
-        content,
-        content_hash: hash,
-        created_by_user_id: user.id,
-        author_name: user.fullName || 'Teacher',
-        topic: topic || 'General',
-        question_type: questionType,
-        options: options || [],
-        difficulty: difficulty || 'medium',
-        type_header: typeHeader,
-        usage_count: 0,
-      });
-    } catch {}
+    await resilientWrite((row) => supabase.from('shared_questions').insert(row), {
+      id: newSharedId,
+      content,
+      content_hash: hash,
+      created_by_user_id: user.id,
+      author_name: user.fullName || 'Teacher',
+      topic: topicName || 'General',
+      question_type: questionType,
+      options: options || [],
+      difficulty: difficulty || 'medium',
+      type_header: typeHeader,
+      usage_count: 0,
+      course_name: names.courseName || null,
+      subject_name: names.subjectName || null,
+      class_name: names.className || null,
+      chapter: names.chapter || null,
+      category: names.category || null,
+      cognitive_level: cognitiveLevel,
+      marks: marks ?? null,
+    }, 'shareQuestionToBank');
 
     return newSharedId;
   },
 
   importSharedQuestionToPaper: async (paperId: string, sharedQ: SharedQuestion, section: string = '', marks: number = 1, parentId?: string, isOptional: boolean = false) => {
-    const { user, createAndAddQuestion, sendQuestionUsageNotification } = get();
+    const { user, createAndAddQuestion, sendQuestionUsageNotification, courses, subjects, classes, chapters, topics, categories } = get();
     if (!user?.id) return '';
 
-    // Flowchart: Branch 2:
-    // Copy content and set parent_shared_id and origin_type = 'SHARED'
+    // If shared question has name-based metadata, find matching IDs in current teacher's library
+    const matchedCourse = sharedQ.courseName ? courses.find(c => c.name.toLowerCase() === sharedQ.courseName?.toLowerCase()) : undefined;
+    const matchedSubject = sharedQ.subjectName ? subjects.find(s => s.name.toLowerCase() === sharedQ.subjectName?.toLowerCase()) : undefined;
+    const matchedClass = sharedQ.className ? classes.find(c => c.name.toLowerCase() === sharedQ.className?.toLowerCase()) : undefined;
+    const matchedChapter = sharedQ.chapter ? chapters.find(c => c.name.toLowerCase() === sharedQ.chapter?.toLowerCase()) : undefined;
+    const matchedTopic = sharedQ.topic ? topics.find(t => t.name.toLowerCase() === sharedQ.topic?.toLowerCase()) : undefined;
+    const matchedCategory = sharedQ.category ? categories.find(c => c.name.toLowerCase() === sharedQ.category?.toLowerCase()) : undefined;
+
     const pqId = await createAndAddQuestion(
       paperId,
       sharedQ.content,
@@ -1014,17 +1273,26 @@ export const useStore = create<AppState>()((set, get) => ({
       sharedQ.options,
       section,
       parentId,
-      marks,
-      sharedQ.courseId,
-      sharedQ.subjectId,
-      sharedQ.classId,
+      sharedQ.marks ?? marks,
+      sharedQ.courseId || matchedCourse?.id,
+      sharedQ.subjectId || matchedSubject?.id,
+      sharedQ.classId || matchedClass?.id,
       sharedQ.difficulty,
       undefined,
       undefined,
       sharedQ.typeHeader,
       isOptional,
       sharedQ.id,
-      'SHARED'
+      'SHARED',
+      {
+        courseId: sharedQ.courseId || matchedCourse?.id,
+        subjectId: sharedQ.subjectId || matchedSubject?.id,
+        classId: sharedQ.classId || matchedClass?.id,
+        chapterId: matchedChapter?.id,
+        topicId: matchedTopic?.id,
+        categoryId: matchedCategory?.id,
+        cognitiveLevel: sharedQ.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL,
+      }
     );
 
     // Update shared question usage count

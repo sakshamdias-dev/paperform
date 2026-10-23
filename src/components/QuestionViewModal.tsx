@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { QuestionType, Difficulty } from '../types';
 import { X, Plus, BookOpen, User as UserIcon, Tag } from 'lucide-react';
-import { renderMath } from '../utils/mathjax';
+import { renderMath, preprocessMathHtml } from '../utils/mathjax';
 
 export interface ViewModalQuestion {
   id?: string;
@@ -125,7 +125,7 @@ export default function QuestionViewModal({ question, onClose, onInsert }: Quest
               border: '1px solid #e2e8f0',
               marginBottom: 16
             }}
-            dangerouslySetInnerHTML={{ __html: question.content }}
+            dangerouslySetInnerHTML={{ __html: preprocessMathHtml(question.content) }}
           />
 
           {/* Options if MCQ */}
@@ -149,7 +149,7 @@ export default function QuestionViewModal({ question, onClose, onInsert }: Quest
                     <span style={{ fontWeight: 700, color: '#2563eb', minWidth: 20 }}>
                       {String.fromCharCode(65 + i)}.
                     </span>
-                    <div className="tex2jax_process" style={{ flex: 1 }} dangerouslySetInnerHTML={{ __html: opt }} />
+                    <div className="tex2jax_process" style={{ flex: 1 }} dangerouslySetInnerHTML={{ __html: preprocessMathHtml(opt) }} />
                   </div>
                 ))}
               </div>

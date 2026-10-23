@@ -2,6 +2,20 @@ export type QuestionType = 'mcq' | 'subjective' | 'fillblank' | 'truefalse' | 'm
 export type Difficulty = 'easy' | 'medium' | 'hard';
 export type PaperSection = string;
 
+/** Bloom's taxonomy cognitive levels (ordered low → high). */
+export type CognitiveLevel = 'remember' | 'understand' | 'apply' | 'analyse' | 'evaluate' | 'create';
+
+export const COGNITIVE_LEVELS: { value: CognitiveLevel; label: string }[] = [
+  { value: 'remember', label: 'Remember' },
+  { value: 'understand', label: 'Understand' },
+  { value: 'apply', label: 'Apply' },
+  { value: 'analyse', label: 'Analyse' },
+  { value: 'evaluate', label: 'Evaluate' },
+  { value: 'create', label: 'Create' },
+];
+
+export const DEFAULT_COGNITIVE_LEVEL: CognitiveLevel = 'understand';
+
 export interface User {
   id: string;
   email: string;
@@ -36,6 +50,51 @@ export interface Class {
   updatedAt: number;
 }
 
+export interface Chapter {
+  id: string;
+  teacherId: string;
+  name: string;
+  subjectId?: string;
+  createdAt: number;
+}
+
+export interface Topic {
+  id: string;
+  teacherId: string;
+  name: string;
+  chapterId?: string;
+  createdAt: number;
+}
+
+export interface Category {
+  id: string;
+  teacherId: string;
+  name: string;
+  createdAt: number;
+}
+
+/** Classification metadata attached to every question (all optional). */
+export interface QuestionMeta {
+  courseId?: string;
+  subjectId?: string;
+  classId?: string;
+  chapterId?: string;
+  topicId?: string;
+  categoryId?: string;
+  cognitiveLevel?: CognitiveLevel;
+}
+
+export interface BankSubQuestion {
+  id: string;
+  content: string;
+  marks: number;
+  questionType?: QuestionType;
+  options?: string[];
+  difficulty?: Difficulty;
+  cognitiveLevel?: CognitiveLevel;
+  explanation?: string;
+}
+
 export interface Question {
   id: string;
   teacherId: string;
@@ -49,6 +108,14 @@ export interface Question {
   explanation?: string;
   imageUrl?: string;
   typeHeader?: string;
+  chapterId?: string;
+  topicId?: string;
+  categoryId?: string;
+  cognitiveLevel?: CognitiveLevel;
+  subNumberingStyle?: SubQuestionNumberingStyle;
+  marks?: number;
+  subquestions?: BankSubQuestion[];
+  parentId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -98,6 +165,17 @@ export interface HeaderConfig {
   visibleHeaderFields?: VisibleHeaderFields;
   subQuestionNumberingStyle?: SubQuestionNumberingStyle;
   sectionDescriptions?: Record<string, string>; // section name -> rich text html description
+  spacing?: PaperSpacing;
+}
+
+/** User-controllable vertical spacing for the printed paper (all values in px except lineHeight). */
+export interface PaperSpacing {
+  sectionTop?: number;        // space above a section header
+  sectionDescGap?: number;    // gap between section name and its description
+  sectionBottom?: number;     // gap between section header block and first question
+  questionGap?: number;       // vertical gap between questions
+  subQuestionGap?: number;    // vertical gap between sub-questions
+  lineHeight?: number;        // body line-height multiplier
 }
 
 export interface QuestionPaper {
@@ -130,6 +208,12 @@ export interface PaperQuestion {
   parentSharedId?: string | null;
   originType?: 'ORIGINAL' | 'SHARED' | 'FORKED';
   isOptional?: boolean;
+  chapterId?: string;
+  topicId?: string;
+  categoryId?: string;
+  cognitiveLevel?: CognitiveLevel;
+  /** Numbering style applied to this question's direct children. Falls back to the paper default. */
+  subNumberingStyle?: SubQuestionNumberingStyle | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -149,6 +233,16 @@ export interface SharedQuestion {
   difficulty: Difficulty;
   typeHeader?: string;
   usageCount: number;
+  // Name-based metadata (shared across teachers, so IDs from private lookup tables are not meaningful)
+  courseName?: string;
+  subjectName?: string;
+  className?: string;
+  chapter?: string;
+  category?: string;
+  cognitiveLevel?: CognitiveLevel;
+  marks?: number;
+  subquestions?: BankSubQuestion[];
+  parentId?: string;
   createdAt: number;
 }
 

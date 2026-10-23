@@ -46,6 +46,7 @@ function App() {
               fetchQuestionPapers(),
               useStore.getState().fetchSharedQuestions(),
               useStore.getState().fetchNotifications(),
+              useStore.getState().fetchLookups(),
             ]);
           }
         } catch (err) {

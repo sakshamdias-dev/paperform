@@ -1,17 +1,48 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Plus, Trash2, Copy, Edit, FolderOpen, LogOut, Loader2, BookOpen, Users, GraduationCap, Search, Lock } from 'lucide-react';
+import { FileText, Plus, Trash2, Copy, Edit, FolderOpen, LogOut, Loader2, BookOpen, Users, GraduationCap, Search, Lock, Bell, Bookmark, Tags, ListFilter } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../supabase';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { user, questionPapers, courses, subjects, classes, fetchCourses, fetchSubjects, fetchClasses, fetchQuestionPapers, createQuestionPaper, deleteQuestionPaper, duplicateQuestionPaper, createCourse, createSubject, createClass } = useStore();
+  const {
+    user,
+    questionPapers,
+    courses,
+    subjects,
+    classes,
+    chapters,
+    topics,
+    categories,
+    notifications,
+    fetchCourses,
+    fetchSubjects,
+    fetchClasses,
+    fetchQuestionPapers,
+    fetchNotifications,
+    fetchLookups,
+    markNotificationAsRead,
+    clearNotifications,
+    createQuestionPaper,
+    deleteQuestionPaper,
+    duplicateQuestionPaper,
+    createCourse,
+    createSubject,
+    createClass,
+    createChapter,
+    deleteChapter,
+    createTopic,
+    deleteTopic,
+    createCategory,
+    deleteCategory,
+  } = useStore();
   const [search, setSearch] = useState('');
   const [courseFilter, setCourseFilter] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // New Paper form state
   const [newTitle, setNewTitle] = useState('');
@@ -25,7 +56,7 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false);
 
   // Settings form state
-  const [settingsTab, setSettingsTab] = useState<'courses' | 'subjects' | 'classes' | 'privacy'>('courses');
+  const [settingsTab, setSettingsTab] = useState<'courses' | 'subjects' | 'classes' | 'chapters' | 'topics' | 'categories' | 'privacy'>('courses');
   const [newItemName, setNewItemName] = useState('');
   const [addingItem, setAddingItem] = useState(false);
   const toggleKeepQuestionsPrivate = useStore((s) => s.toggleKeepQuestionsPrivate);
@@ -37,6 +68,8 @@ export default function Dashboard() {
     fetchCourses();
     fetchSubjects();
     fetchClasses();
+    fetchNotifications();
+    fetchLookups();
   }, []);
 
   const filteredPapers = useMemo(() => {
@@ -105,6 +138,12 @@ export default function Dashboard() {
         await createSubject(newItemName.trim());
       } else if (settingsTab === 'classes') {
         await createClass(newItemName.trim());
+      } else if (settingsTab === 'chapters') {
+        await createChapter(newItemName.trim());
+      } else if (settingsTab === 'topics') {
+        await createTopic(newItemName.trim());
+      } else if (settingsTab === 'categories') {
+        await createCategory(newItemName.trim());
       }
       setNewItemName('');
     } finally {
@@ -146,6 +185,8 @@ export default function Dashboard() {
   const getSubjectName = (id?: string) => subjects.find(s => s.id === id)?.name || '-';
   const getClassName = (id?: string) => classes.find(c => c.id === id)?.name || '-';
 
+  const unreadNotifCount = notifications.filter(n => !n.read).length;
+
   return (
     <div className="app-container">
       <aside className="sidebar">
@@ -169,6 +210,21 @@ export default function Dashboard() {
           <div className="nav-item" onClick={() => setShowSettingsModal(true)}>
             <BookOpen size={20} />
             <span>Paper Details</span>
+          </div>
+          <div
+            className={`nav-item ${showNotifications ? 'active' : ''}`}
+            onClick={() => setShowNotifications(!showNotifications)}
+            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Bell size={20} />
+              <span>Notifications</span>
+            </div>
+            {unreadNotifCount > 0 && (
+              <span className="notif-badge-count" style={{ position: 'static' }}>
+                {unreadNotifCount}
+              </span>
+            )}
           </div>
         </nav>
         <div className="sidebar-footer">
@@ -194,29 +250,109 @@ export default function Dashboard() {
               <h1 className="dashboard-title">My Question Papers</h1>
               <p className="dashboard-subtitle">Welcome back, {user?.fullName}</p>
             </div>
-            <div className="filters">
-              <div className="search-wrapper">
-                <Search size={18} className="search-icon" />
-                <input
-                  type="text"
-                  className="search-input"
-                  placeholder="Search papers..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="filters">
+                <div className="search-wrapper">
+                  <Search size={18} className="search-icon" />
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search papers..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+                  <option value="">All Courses</option>
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
+                  <option value="">All Subjects</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
               </div>
-              <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-                <option value="">All Courses</option>
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
-                <option value="">All Subjects</option>
-                {subjects.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+
+              {/* Notifications bell button with dropdown */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  className="notif-bell-btn"
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  title="Notifications"
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 'var(--radius-md)',
+                    background: '#ffffff',
+                    border: '1px solid var(--border)',
+                    boxShadow: 'var(--shadow-sm)',
+                    position: 'relative',
+                  }}
+                >
+                  <Bell size={18} color="#034089" />
+                  {unreadNotifCount > 0 && (
+                    <span className="notif-badge-count">
+                      {unreadNotifCount}
+                    </span>
+                  )}
+                </button>
+
+                {showNotifications && (
+                  <div
+                    className="notifications-dropdown"
+                    style={{ position: 'absolute', top: 48, right: 0, zIndex: 1200 }}
+                  >
+                    <div className="notifications-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Bell size={14} color="#034089" />
+                        <span style={{ fontWeight: 600 }}>Notifications</span>
+                        {unreadNotifCount > 0 && (
+                          <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>
+                            ({unreadNotifCount} new)
+                          </span>
+                        )}
+                      </div>
+                      {notifications.length > 0 && (
+                        <button
+                          className="hover-action-btn"
+                          onClick={() => clearNotifications()}
+                          style={{ fontSize: 11, color: 'var(--text-secondary)' }}
+                        >
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+                    <div className="notifications-list">
+                      {notifications.length === 0 ? (
+                        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>
+                          No notifications yet
+                        </div>
+                      ) : (
+                        notifications.map(n => (
+                          <div
+                            key={n.id}
+                            className={`notification-item ${!n.read ? 'unread' : ''}`}
+                            onClick={() => markNotificationAsRead(n.id)}
+                          >
+                            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2, color: 'var(--text-primary)' }}>
+                              {n.title}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4, whiteSpace: 'pre-line' }}>
+                              {n.message}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                              {new Date(n.createdAt).toLocaleDateString()} {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -407,33 +543,61 @@ export default function Dashboard() {
               <h2 className="modal-title">Paper Details</h2>
             </div>
             <div className="modal-content">
-              <div style={{ display: 'flex', gap: 15, marginBottom: 20 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
                 <button
                   className={`btn ${settingsTab === 'courses' ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setSettingsTab('courses')}
+                  style={{ fontSize: 13, padding: '6px 12px' }}
                 >
-                  <GraduationCap size={18} style={{ marginRight: 7, marginBottom: -4 }} />
+                  <GraduationCap size={16} style={{ marginRight: 6 }} />
                   Courses
                 </button>
                 <button
                   className={`btn ${settingsTab === 'subjects' ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setSettingsTab('subjects')}
+                  style={{ fontSize: 13, padding: '6px 12px' }}
                 >
-                  <BookOpen size={18} style={{ marginRight: 7, marginBottom: -4 }} />
+                  <BookOpen size={16} style={{ marginRight: 6 }} />
                   Subjects
                 </button>
                 <button
                   className={`btn ${settingsTab === 'classes' ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setSettingsTab('classes')}
+                  style={{ fontSize: 13, padding: '6px 12px' }}
                 >
-                  <Users size={18} style={{ marginRight: 7, marginBottom: -4 }} />
+                  <Users size={16} style={{ marginRight: 6 }} />
                   Classes
+                </button>
+                <button
+                  className={`btn ${settingsTab === 'chapters' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSettingsTab('chapters')}
+                  style={{ fontSize: 13, padding: '6px 12px' }}
+                >
+                  <Bookmark size={16} style={{ marginRight: 6 }} />
+                  Chapters
+                </button>
+                <button
+                  className={`btn ${settingsTab === 'topics' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSettingsTab('topics')}
+                  style={{ fontSize: 13, padding: '6px 12px' }}
+                >
+                  <ListFilter size={16} style={{ marginRight: 6 }} />
+                  Topics
+                </button>
+                <button
+                  className={`btn ${settingsTab === 'categories' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSettingsTab('categories')}
+                  style={{ fontSize: 13, padding: '6px 12px' }}
+                >
+                  <Tags size={16} style={{ marginRight: 6 }} />
+                  Categories / Streams
                 </button>
                 <button
                   className={`btn ${settingsTab === 'privacy' ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setSettingsTab('privacy')}
+                  style={{ fontSize: 13, padding: '6px 12px' }}
                 >
-                  <Lock size={18} style={{ marginRight: 7, marginBottom: -4 }} />
+                  <Lock size={16} style={{ marginRight: 6 }} />
                   Privacy & Sharing
                 </button>
               </div>
@@ -444,7 +608,7 @@ export default function Dashboard() {
                     <input
                       type="text"
                       className="property-input"
-                      placeholder={`Add new ${settingsTab.slice(0, -1)}...`}
+                      placeholder={`Add new ${settingsTab === 'categories' ? 'category / stream' : settingsTab.slice(0, -1)}...`}
                       value={newItemName}
                       onChange={(e) => setNewItemName(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
@@ -526,6 +690,39 @@ export default function Dashboard() {
                     </button>
                   </span>
                 ))}
+                {settingsTab === 'chapters' && chapters.map((ch) => (
+                  <span key={ch.id} className="paper-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'default' }}>
+                    {ch.name}
+                    <button
+                      onClick={() => deleteChapter(ch.id)}
+                      style={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.7)', padding: 0 }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </span>
+                ))}
+                {settingsTab === 'topics' && topics.map((tp) => (
+                  <span key={tp.id} className="paper-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'default' }}>
+                    {tp.name}
+                    <button
+                      onClick={() => deleteTopic(tp.id)}
+                      style={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.7)', padding: 0 }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </span>
+                ))}
+                {settingsTab === 'categories' && categories.map((cat) => (
+                  <span key={cat.id} className="paper-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'default' }}>
+                    {cat.name}
+                    <button
+                      onClick={() => deleteCategory(cat.id)}
+                      style={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.7)', padding: 0 }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </span>
+                ))}
                 {settingsTab === 'courses' && courses.length === 0 && (
                   <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>No courses yet. Add one above.</p>
                 )}
@@ -534,6 +731,15 @@ export default function Dashboard() {
                 )}
                 {settingsTab === 'classes' && classes.length === 0 && (
                   <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>No classes yet. Add one above.</p>
+                )}
+                {settingsTab === 'chapters' && chapters.length === 0 && (
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>No chapters yet. Add one above.</p>
+                )}
+                {settingsTab === 'topics' && topics.length === 0 && (
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>No topics yet. Add one above.</p>
+                )}
+                {settingsTab === 'categories' && categories.length === 0 && (
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>No categories yet. Add one above.</p>
                 )}
               </div>
             </div>
