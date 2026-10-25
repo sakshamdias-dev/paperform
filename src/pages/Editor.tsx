@@ -1053,7 +1053,6 @@ export default function Editor() {
     return Array.from(secMap.values());
   }, [paperQuestionsList, questions]);
 
-  const totalQuestionsCount = paperQuestionsList.length;
 
   const getAllQuestionsFlat = (qs: any[], excludeId?: string | null, depth = 0): any[] => {
     let result: any[] = [];
@@ -1335,6 +1334,7 @@ export default function Editor() {
     setIsAddingChapter(false);
     setIsAddingTopic(false);
     setIsAddingCategory(false);
+    setActiveView('tree');
   };
 
   const handleAddDraftToPaper = async () => {
@@ -2658,7 +2658,7 @@ export default function Editor() {
 
       {/* TEST PAPER CONSTRUCTOR MODAL */}
       {isConstructorOpen && (
-        <div className="modal-overlay" onClick={() => setIsConstructorOpen(false)}>
+        <div className="modal-overlay" onClick={() => { setIsConstructorOpen(false); handleCancelDraft(); }}>
           <div className="modal question-editor-modal" style={{ maxWidth: '780px', height: '85vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div>
@@ -2667,7 +2667,7 @@ export default function Editor() {
                   Configure sections, questions, and nested subquestions
                 </p>
               </div>
-              <button className="modal-close-btn" onClick={() => setIsConstructorOpen(false)}>
+              <button className="modal-close-btn" onClick={() => { setIsConstructorOpen(false); handleCancelDraft(); }}>
                 <X size={18} />
               </button>
             </div>
@@ -2893,7 +2893,7 @@ export default function Editor() {
                     />
                   </div>
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
-                    {totalQuestionsCount > 0 && <button className="btn btn-secondary" onClick={() => setActiveView('add-question')}>Cancel</button>}
+                    <button className="btn btn-secondary" onClick={() => setActiveView('tree')}>Cancel</button>
                     <button className="btn btn-primary" onClick={() => {
                       if (!newSectionTitle.trim()) return;
                       // Just set draftSection to new title, it will be added when a question is added
@@ -3484,7 +3484,7 @@ export default function Editor() {
 
             {activeView === 'add-question' && (
               <div className="modal-actions" style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', flexShrink: 0 }}>
-                {totalQuestionsCount > 0 && <button className="btn btn-secondary" onClick={handleCancelDraft}>Cancel</button>}
+                <button className="btn btn-secondary" onClick={handleCancelDraft}>Cancel</button>
                 <button className="btn btn-primary" onClick={handleAddDraftToPaper} disabled={saving || !draftContent.trim()}>
                   {saving ? (editingQuestionId ? 'Updating...' : 'Saving...') : (editingQuestionId ? 'Update & Save All' : 'Save Question & Subquestions')}
                 </button>

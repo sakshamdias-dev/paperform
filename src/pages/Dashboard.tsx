@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileText, Plus, Trash2, Copy, Edit, FolderOpen, LogOut, Loader2, BookOpen, Users, GraduationCap, Search, Lock, Bell, Bookmark, Tags, ListFilter } from 'lucide-react';
 import { useStore } from '../store';
@@ -43,6 +43,21 @@ export default function Dashboard() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    if (showNotifications) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifications]);
 
   // New Paper form state
   const [newTitle, setNewTitle] = useState('');
@@ -200,7 +215,7 @@ export default function Dashboard() {
         </div>
         <nav className="sidebar-nav">
           <button className="new-paper-btn" onClick={() => setShowNewModal(true)} style={{ marginBottom: 16 }}>
-            <Plus size={20} style={{ marginLeft: -20 }} />
+            <Plus size={20} />
             <span>New Paper</span>
           </button>
           <div className="nav-item active">
@@ -210,21 +225,6 @@ export default function Dashboard() {
           <div className="nav-item" onClick={() => setShowSettingsModal(true)}>
             <BookOpen size={20} />
             <span>Paper Details</span>
-          </div>
-          <div
-            className={`nav-item ${showNotifications ? 'active' : ''}`}
-            onClick={() => setShowNotifications(!showNotifications)}
-            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Bell size={20} />
-              <span>Notifications</span>
-            </div>
-            {unreadNotifCount > 0 && (
-              <span className="notif-badge-count" style={{ position: 'static' }}>
-                {unreadNotifCount}
-              </span>
-            )}
           </div>
         </nav>
         <div className="sidebar-footer">
@@ -277,20 +277,11 @@ export default function Dashboard() {
               </div>
 
               {/* Notifications bell button with dropdown */}
-              <div style={{ position: 'relative' }}>
+              <div ref={notifRef} style={{ position: 'relative' }}>
                 <button
                   className="notif-bell-btn"
                   onClick={() => setShowNotifications(!showNotifications)}
                   title="Notifications"
-                  style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 'var(--radius-md)',
-                    background: '#ffffff',
-                    border: '1px solid var(--border)',
-                    boxShadow: 'var(--shadow-sm)',
-                    position: 'relative',
-                  }}
                 >
                   <Bell size={18} color="#034089" />
                   {unreadNotifCount > 0 && (
@@ -301,14 +292,11 @@ export default function Dashboard() {
                 </button>
 
                 {showNotifications && (
-                  <div
-                    className="notifications-dropdown"
-                    style={{ position: 'absolute', top: 48, right: 0, zIndex: 1200 }}
-                  >
+                  <div className="notifications-dropdown">
                     <div className="notifications-header">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Bell size={14} color="#034089" />
-                        <span style={{ fontWeight: 600 }}>Notifications</span>
+                      <div className="notifications-header-title">
+                        <Bell size={16} color="#034089" />
+                        <span>Notifications</span>
                         {unreadNotifCount > 0 && (
                           <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>
                             ({unreadNotifCount} new)
@@ -327,8 +315,9 @@ export default function Dashboard() {
                     </div>
                     <div className="notifications-list">
                       {notifications.length === 0 ? (
-                        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>
-                          No notifications yet
+                        <div className="notifications-empty">
+                          <Bell size={24} style={{ opacity: 0.35, marginBottom: 4 }} />
+                          <span>No notifications yet</span>
                         </div>
                       ) : (
                         notifications.map(n => (
