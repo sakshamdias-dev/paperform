@@ -126,7 +126,7 @@ import React from 'react';
 import QuestionBankSidebar from '../components/QuestionBankSidebar';
 import QuestionViewModal, { type ViewModalQuestion } from '../components/QuestionViewModal';
 import SectionEditModal from '../components/SectionEditModal';
-import { renderMath, preprocessMathHtml } from '../utils/mathjax';
+import { renderMath, preprocessMathHtml, cleanImageHtml } from '../utils/mathjax';
 
 const HEADER_FIELD_CONFIG: { key: keyof VisibleHeaderFields; label: string }[] = [
   { key: 'examTitle', label: 'Exam Title' },
@@ -622,6 +622,9 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
   const handleEditorClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.tagName === 'IMG' && onImageClick) {
+      if ((target as HTMLImageElement).style.outline) {
+        (target as HTMLImageElement).style.outline = '';
+      }
       onImageClick(target as HTMLImageElement, value, onChange);
     }
   };
@@ -854,7 +857,10 @@ export default function Editor() {
         }
       }
 
-      el.style.outline = '2px solid var(--accent)';
+      // Do NOT set outline directly on the DOM node to avoid it serializing into HTML
+      if (el.style.outline) {
+        el.style.outline = '';
+      }
 
       const rect = el.getBoundingClientRect();
       const scrollParent = el.closest('.modal-content, .editor-content-area, .paper-preview-scroll, .editor-canvas');
@@ -888,6 +894,61 @@ export default function Editor() {
     };
   }, [editingImage]);
 
+  // Commit image resize immediately to Quill and React state (e.g. draftContent)
+  const commitImageResize = useCallback((newWidth: number) => {
+    if (!editingImage) return;
+    const imgEl = editingImage.imgElement;
+    imgEl.style.width = `${newWidth}px`;
+    imgEl.style.height = 'auto';
+    imgEl.setAttribute('width', `${newWidth}`);
+    imgEl.removeAttribute('height');
+    imgEl.style.outline = '';
+
+    const qlEditor = imgEl.closest('.ql-editor');
+    let updatedHtml = '';
+    if (qlEditor) {
+      updatedHtml = cleanImageHtml(qlEditor.innerHTML);
+    } else {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(editingImage.originalHtml, 'text/html');
+      const imgs = doc.querySelectorAll('img');
+      const targetSrc = imgEl.getAttribute('src');
+      imgs.forEach(img => {
+        if (img.getAttribute('src') === targetSrc || img.src === imgEl.src) {
+          img.style.width = `${newWidth}px`;
+          img.style.height = 'auto';
+          img.setAttribute('width', `${newWidth}`);
+          img.removeAttribute('height');
+          img.style.outline = '';
+        }
+      });
+      updatedHtml = cleanImageHtml(doc.body.innerHTML);
+    }
+
+    // Call onApply so React state updates immediately without needing to add a sentence!
+    editingImage.onApply(updatedHtml);
+
+    setEditingImage(prev => prev ? {
+      ...prev,
+      originalHtml: updatedHtml,
+      originalWidth: newWidth,
+    } : null);
+
+    const rect = imgEl.getBoundingClientRect();
+    setImageOverlayRect(prev => prev ? {
+      ...prev,
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    } : null);
+  }, [editingImage]);
+
+  const commitImageResizeRef = useRef(commitImageResize);
+  useEffect(() => {
+    commitImageResizeRef.current = commitImageResize;
+  });
+
   // Global mouse handlers for corner drag resize
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -915,11 +976,19 @@ export default function Editor() {
         clipRight: imageOverlayRect.clipRight
       });
     };
+
     const handleMouseUp = () => {
-      if (resizeRef.current) resizeRef.current = null;
+      if (resizeRef.current) {
+        resizeRef.current = null;
+        if (editingImage?.imgElement) {
+          const finalWidth = Math.round(editingImage.imgElement.getBoundingClientRect().width);
+          commitImageResizeRef.current(finalWidth);
+        }
+      }
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
+
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
@@ -936,26 +1005,47 @@ export default function Editor() {
 
   const applyImageEdit = useCallback(async (newSrc?: string, newWidth?: number) => {
     if (!editingImage) return;
-    const currentWidth = newWidth !== undefined ? newWidth : editingImage.imgElement.getBoundingClientRect().width;
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(editingImage.originalHtml, 'text/html');
-    const imgs = doc.querySelectorAll('img');
-    const targetSrc = editingImage.imgElement.getAttribute('src');
+    const currentWidth = newWidth !== undefined ? Math.round(newWidth) : Math.round(editingImage.imgElement.getBoundingClientRect().width);
+    const imgEl = editingImage.imgElement;
+    imgEl.style.outline = '';
 
-    imgs.forEach(img => {
-      if (img.getAttribute('src') === targetSrc || img.src === editingImage.imgElement.src) {
-        if (newSrc && typeof newSrc === 'string') img.src = newSrc;
-        const w = Math.round(currentWidth);
-        img.style.width = `${w}px`;
-        img.setAttribute('width', `${w}`);
-      }
-    });
-    await editingImage.onApply(doc.body.innerHTML);
+    if (newSrc && typeof newSrc === 'string') {
+      imgEl.src = newSrc;
+      imgEl.setAttribute('src', newSrc);
+    }
+    imgEl.style.width = `${currentWidth}px`;
+    imgEl.style.height = 'auto';
+    imgEl.setAttribute('width', `${currentWidth}`);
+    imgEl.removeAttribute('height');
+
+    const qlEditor = imgEl.closest('.ql-editor');
+    let finalHtml = '';
+    if (qlEditor) {
+      finalHtml = cleanImageHtml(qlEditor.innerHTML);
+    } else {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(editingImage.originalHtml, 'text/html');
+      const imgs = doc.querySelectorAll('img');
+      const targetSrc = imgEl.getAttribute('src');
+
+      imgs.forEach(img => {
+        if (img.getAttribute('src') === targetSrc || img.src === imgEl.src) {
+          if (newSrc && typeof newSrc === 'string') img.src = newSrc;
+          img.style.width = `${currentWidth}px`;
+          img.style.height = 'auto';
+          img.setAttribute('width', `${currentWidth}`);
+          img.removeAttribute('height');
+          img.style.outline = '';
+        }
+      });
+      finalHtml = cleanImageHtml(doc.body.innerHTML);
+    }
+
+    await editingImage.onApply(finalHtml);
     setEditingImage(null);
   }, [editingImage]);
 
-
-  // Click outside to apply edit and dismiss orange border
+  // Click outside to apply edit and dismiss selection overlay
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -966,7 +1056,7 @@ export default function Editor() {
         !target.closest('.crop-btn') &&
         !target.closest('.modal-overlay') // Crop modal
       ) {
-        // e.preventDefault() here might break legitimate clicks, so we just passively save
+        // Passively save and dismiss overlay
         applyImageEdit();
       }
     };
@@ -1359,10 +1449,14 @@ export default function Editor() {
     }
 
     setSaving(true);
+    if (editingImage) {
+      setEditingImage(null);
+    }
     try {
       const options = draftType === 'mcq' ? draftOptions.filter(o => o.trim()) : [];
       let currentParentId = qParentId || undefined;
       const finalMarks = draftType === 'text' ? 0 : draftMarks;
+      const cleanedDraftContent = cleanImageHtml(draftContent.trim());
 
       const resolvedCourseId = draftCourseId || paper?.courseId;
       const resolvedSubjectId = draftSubjectId || paper?.subjectId;
@@ -1380,7 +1474,7 @@ export default function Editor() {
       // If we are editing an existing question, update it instead of creating a new one
       if (editingQuestionId && editingPQId) {
         await updateQuestion(editingQuestionId, {
-          content: draftContent.trim(),
+          content: cleanedDraftContent,
           questionType: draftType,
           options: options.length > 0 ? options : [],
           difficulty: draftDifficulty,
@@ -1410,7 +1504,7 @@ export default function Editor() {
         // Creating a new question
         const result = await createAndAddQuestion(
           id,
-          draftContent.trim(),
+          cleanedDraftContent,
           draftType,
           options.length > 0 ? options : undefined,
           draftSection,
@@ -1450,13 +1544,14 @@ export default function Editor() {
 
       // Create or update all draft subquestions
       for (const sq of draftSubquestions) {
-        if (!sq.content.trim()) continue;
+        const cleanedSqContent = cleanImageHtml(sq.content.trim());
+        if (!cleanedSqContent) continue;
         const sqOptions = sq.type === 'mcq' ? sq.options.filter(o => o.trim()) : [];
         const sqMarks = sq.type === 'text' ? 0 : sq.marks;
         if (sq.questionId && sq.pqId) {
           // Update existing
           await updateQuestion(sq.questionId, {
-            content: sq.content.trim(),
+            content: cleanedSqContent,
             questionType: sq.type,
             options: sqOptions.length > 0 ? sqOptions : [],
             difficulty: sq.difficulty,
@@ -1482,7 +1577,7 @@ export default function Editor() {
           };
           await createAndAddQuestion(
             id,
-            sq.content.trim(),
+            cleanedSqContent,
             sq.type,
             sqOptions.length > 0 ? sqOptions : undefined,
             draftSection,
@@ -1692,9 +1787,16 @@ export default function Editor() {
 
     let clonedCache: Node | null = null;
     const paperElement = document.getElementById('printable-paper');
+    const editorCanvas = paperElement?.closest('.editor-canvas') as HTMLElement | null;
+    const prevScrollTop = editorCanvas ? editorCanvas.scrollTop : 0;
 
     try {
       if (!paperElement) throw new Error('Paper container not found');
+
+      // Scroll editor canvas to top for accurate coordinate capturing
+      if (editorCanvas) {
+        editorCanvas.scrollTop = 0;
+      }
 
       // 1. Typeset MathJax formulas first
       await renderMath();
@@ -1729,6 +1831,8 @@ export default function Editor() {
         allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
+        width: paperElement.scrollWidth,
+        height: paperElement.scrollHeight,
         windowWidth: paperElement.scrollWidth,
         windowHeight: paperElement.scrollHeight,
         scrollY: 0,
@@ -1746,36 +1850,84 @@ export default function Editor() {
       // Height of one content page in canvas pixels
       const pageCanvasHeight = (canvas.width * contentHeight) / contentWidth;
 
-      // 5. Smart page cut calculation: query atomic unbreakable blocks to prevent cutting text/images
+      // 5. Smart page cut calculation: query atomic unbreakable blocks to prevent cutting questions, tables, text & images
       const paperRect = paperElement.getBoundingClientRect();
-      const atomicElements = Array.from(
+      const paperHeight = paperElement.scrollHeight || paperRect.height;
+      const scaleY = canvas.height / paperHeight;
+
+      interface Box {
+        top: number;
+        bottom: number;
+        height: number;
+      }
+
+      // Priority 1: Top-level questions. Keeping whole questions intact is the primary goal for exam papers.
+      const questionElements = Array.from(
+        paperElement.querySelectorAll<HTMLElement>('.rendered-question-item')
+      );
+
+      const questionBoxes: Box[] = questionElements
+        .map(el => {
+          const rect = el.getBoundingClientRect();
+          const top = (rect.top - paperRect.top) * scaleY;
+          const bottom = (rect.bottom - paperRect.top) * scaleY;
+          return { top, bottom, height: bottom - top };
+        })
+        .filter(b => b.height > 4);
+
+      questionBoxes.sort((a, b) => a.top - b.top);
+
+      // Priority 2: Atomic elements inside questions that MUST NEVER be sliced across (tables, images, options, etc.)
+      const tableElements = Array.from(paperElement.querySelectorAll<HTMLElement>('table'));
+      const innerAtomicElements = Array.from(
         paperElement.querySelectorAll<HTMLElement>(
-          'table tr, img, .section-divider, .rendered-question-item, .clean-question, .q-option, .q-row, p, li, blockquote'
+          'img, .section-divider, .q-options, .q-row, p, li, blockquote'
         )
       );
 
-      interface UnbreakableBox {
-        top: number;
-        bottom: number;
+      const innerBoxes: Box[] = [];
+
+      for (const table of tableElements) {
+        const rect = table.getBoundingClientRect();
+        const top = (rect.top - paperRect.top) * scaleY;
+        const bottom = (rect.bottom - paperRect.top) * scaleY;
+        const height = bottom - top;
+
+        // Any table that fits on a single page (< 90% of page height) is strictly UNBREAKABLE
+        if (height < pageCanvasHeight * 0.90) {
+          innerBoxes.push({ top, bottom, height });
+        } else {
+          // Extremely tall multi-page table fallback: keep individual rows intact
+          const rows = Array.from(table.querySelectorAll<HTMLElement>('tr'));
+          for (const row of rows) {
+            const rRect = row.getBoundingClientRect();
+            const rTop = (rRect.top - paperRect.top) * scaleY;
+            const rBottom = (rRect.bottom - paperRect.top) * scaleY;
+            innerBoxes.push({ top: rTop, bottom: rBottom, height: rBottom - rTop });
+          }
+        }
       }
 
-      const unbreakableBoxes: UnbreakableBox[] = [];
-      const scaleY = canvas.height / paperRect.height;
+      for (const el of innerAtomicElements) {
+        // Skip elements inside normal tables (since the table itself is already treated as an atomic block)
+        const parentTable = el.closest('table');
+        if (parentTable) {
+          const tRect = parentTable.getBoundingClientRect();
+          const tHeight = (tRect.bottom - tRect.top) * scaleY;
+          if (tHeight < pageCanvasHeight * 0.90) continue;
+        }
 
-      for (const el of atomicElements) {
         const rect = el.getBoundingClientRect();
         const top = (rect.top - paperRect.top) * scaleY;
         const bottom = (rect.bottom - paperRect.top) * scaleY;
         const height = bottom - top;
 
-        // Any block within reasonable size (< 85% of page canvas height) shouldn't be sliced across
-        if (height > 4 && height < pageCanvasHeight * 0.85) {
-          unbreakableBoxes.push({ top, bottom });
+        if (height > 4 && height < pageCanvasHeight * 0.90) {
+          innerBoxes.push({ top, bottom, height });
         }
       }
 
-      // Sort boxes by top position
-      unbreakableBoxes.sort((a, b) => a.top - b.top);
+      innerBoxes.sort((a, b) => a.top - b.top);
 
       let currentCanvasY = 0;
       let pageIndex = 0;
@@ -1816,30 +1968,50 @@ export default function Editor() {
         const nominalCutY = currentCanvasY + pageCanvasHeight;
         let bestCutY = nominalCutY;
 
-        // If an unbreakable box (table row, image, line, etc.) straddles bestCutY,
-        // move the cut line above that box to avoid slicing it in half!
-        // We only pull back if it leaves the page at least 65% full (preventing bare empty space)
-        let foundIntersecting = true;
-        let iterations = 0;
+        // Step A: Priority 1 - Question-level pagination
+        // If a question straddles the page boundary, move the whole question to the next page,
+        // provided it fits on a single page and the current page already has preceding content.
+        let questionCutFound = false;
+        for (const qBox of questionBoxes) {
+          if (qBox.top < nominalCutY - 4 && qBox.bottom > nominalCutY + 4) {
+            const fitsOnOnePage = qBox.height < pageCanvasHeight * 0.95;
+            const hasPriorContentOnPage = qBox.top > currentCanvasY + Math.min(80, pageCanvasHeight * 0.10);
 
-        while (foundIntersecting && iterations < 12) {
-          iterations++;
-          foundIntersecting = false;
+            if (fitsOnOnePage && hasPriorContentOnPage) {
+              bestCutY = Math.floor(qBox.top) - 1;
+              questionCutFound = true;
+              break;
+            }
+          }
+        }
 
-          for (const box of unbreakableBoxes) {
-            // Check if box is split by current bestCutY
-            if (box.top < bestCutY - 1 && box.bottom > bestCutY + 1) {
-              if (box.top > currentCanvasY + (pageCanvasHeight * 0.65)) {
-                bestCutY = Math.floor(box.top) - 1;
-                foundIntersecting = true;
-                break;
+        // Step B: Priority 2 - If question-level cut wasn't applied (e.g. question is huge, or starts at page top),
+        // find a clean cut between internal atomic elements (e.g. before a table, image, subquestion, or paragraph)
+        // so that tables, images, and text lines are never sliced in half.
+        if (!questionCutFound) {
+          let foundIntersecting = true;
+          let iterations = 0;
+
+          while (foundIntersecting && iterations < 15) {
+            iterations++;
+            foundIntersecting = false;
+
+            for (const box of innerBoxes) {
+              // Check if box is split by current bestCutY
+              if (box.top < bestCutY - 2 && box.bottom > bestCutY + 2) {
+                // As long as pushing this element doesn't empty the page:
+                if (box.top > currentCanvasY + 40) {
+                  bestCutY = Math.floor(box.top) - 1;
+                  foundIntersecting = true;
+                  break;
+                }
               }
             }
           }
         }
 
-        // Safety fallback if no valid split point was found
-        if (bestCutY <= currentCanvasY + 60) {
+        // Safety fallback if no valid split point was found or cut is pushed too close to top
+        if (bestCutY <= currentCanvasY + 40) {
           bestCutY = nominalCutY;
         }
 
@@ -1874,6 +2046,9 @@ export default function Editor() {
       console.error('Print Error:', err);
       showToastMessage('Failed to generate PDF');
     } finally {
+      if (editorCanvas) {
+        editorCanvas.scrollTop = prevScrollTop;
+      }
       if (clonedCache && paperElement && clonedCache.parentNode === paperElement) {
         paperElement.removeChild(clonedCache);
       }
@@ -2478,6 +2653,23 @@ export default function Editor() {
           {/* Inline image resize handles */}
           {editingImage && imageOverlayRect && (
             <>
+              {/* Selection Border Box (rendered as an overlay, NEVER touching the editor DOM) */}
+              <div
+                style={{
+                  position: 'fixed',
+                  top: imageOverlayRect.top,
+                  left: imageOverlayRect.left,
+                  width: imageOverlayRect.width,
+                  height: imageOverlayRect.height,
+                  border: '2px solid var(--accent, #f97316)',
+                  pointerEvents: 'none',
+                  zIndex: 1000,
+                  boxSizing: 'border-box',
+                  borderRadius: 2,
+                  opacity: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 0 : 1,
+                }}
+              />
+
               {/* Corner handles */}
               {['nw', 'ne', 'sw', 'se'].map(corner => {
                 const isRight = corner.includes('e');

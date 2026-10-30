@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { Question, SharedQuestion, CognitiveLevel, BankSubQuestion } from '../types';
 import { COGNITIVE_LEVELS } from '../types';
 import { Search, X, Eye, Plus, Sparkles, BookOpen, Layers, User as UserIcon, Filter, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
@@ -52,6 +53,16 @@ function SubquestionsModal({
   const allSelected = subqs.length > 0 && selectedSubqIds.size === subqs.length;
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       renderMath();
     }, 60);
@@ -97,27 +108,67 @@ function SubquestionsModal({
   };
 
   const topicName = 'topic' in question ? (question as any).topic : undefined;
-  const cleanTitle = question.typeHeader || topicName || stripHtml(question.content).substring(0, 32);
+  const cleanTitle = question.typeHeader || topicName || stripHtml(question.content).substring(0, 36);
 
-  return (
-    <div className="qb-modal-backdrop" onClick={onClose}>
-      <div className="qb-subq-modal" onClick={(e) => e.stopPropagation()}>
+  const detectedQNum =
+    (question.typeHeader?.match(/Q\s*(\d+)/i) ||
+      stripHtml(question.content).match(/Q\s*(\d+)/i))?.[1] || '2';
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div className="modal-overlay" style={{ zIndex: 11500 }} onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 700,
+          width: '90vw',
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
         {/* Modal Header */}
-        <div className="qb-subq-modal-header">
-          <div className="qb-subq-modal-title">
-            Select Subquestions: {cleanTitle} (Q2)
+        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, marginRight: 12 }}>
+            <Layers size={18} color="var(--primary, #034089)" style={{ flexShrink: 0 }} />
+            <h2
+              className="modal-title"
+              style={{
+                fontSize: 18,
+                margin: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={`Select Subquestions${cleanTitle ? `: ${cleanTitle}` : ''}`}
+            >
+              Select Subquestions{cleanTitle ? `: ${cleanTitle}` : ''}
+            </h2>
+            {isShared && (
+              <span className="qb-modal-brand-badge" style={{ flexShrink: 0, marginLeft: 4 }}>EXAMFRIENDLY</span>
+            )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="qb-modal-brand-badge">EXAMFRIENDLY</span>
-            <button className="qb-modal-close-btn" onClick={onClose} title="Close">
-              <X size={18} />
-            </button>
-          </div>
+          <button className="modal-close-btn" onClick={onClose} title="Close">
+            <X size={18} />
+          </button>
         </div>
 
         {/* Modal Toolbar / Select All & Total Marks */}
-        <div className="qb-subq-modal-toolbar">
-          <label className="qb-select-all-label">
+        <div
+          className="qb-subq-modal-toolbar"
+          style={{
+            padding: '10px 20px',
+            background: '#f8fafc',
+            borderBottom: '1px solid #e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <label className="qb-select-all-label" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, cursor: 'pointer' }}>
             <input
               type="checkbox"
               checked={allSelected}
@@ -131,24 +182,40 @@ function SubquestionsModal({
           </div>
         </div>
 
-        {/* Subquestions List */}
-        <div className="qb-subq-modal-list">
+        {/* Modal Content / Subquestions List */}
+        <div
+          className="modal-content"
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
           {subqs.map((sq, idx) => {
             const isChecked = selectedSubqIds.has(sq.id);
             return (
               <div
                 key={sq.id}
                 className={`qb-subq-item ${isChecked ? 'selected' : ''}`}
+                onClick={() => handleToggleSubq(sq.id)}
+                style={{ cursor: 'pointer' }}
               >
                 <input
                   type="checkbox"
                   checked={isChecked}
-                  onChange={() => handleToggleSubq(sq.id)}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    handleToggleSubq(sq.id);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
                   className="qb-checkbox"
                 />
                 <div className="qb-subq-item-body">
                   <div className="qb-subq-item-label">
-                    Q2.{idx + 1} ({sq.marks || 1} Mark{(sq.marks || 1) === 1 ? '' : 's'})
+                    Q{detectedQNum}.{idx + 1} ({sq.marks || 1} Mark{(sq.marks || 1) === 1 ? '' : 's'})
                   </div>
                   <div
                     className="qb-subq-item-content tex2jax_process"
@@ -165,13 +232,16 @@ function SubquestionsModal({
                     </div>
                   )}
                 </div>
-                <div className="qb-subq-item-actions">
+                <div className="qb-subq-item-actions" onClick={(e) => e.stopPropagation()}>
                   <span className="qb-subq-marks-pill">
                     {sq.marks || 1}m
                   </span>
                   <button
                     className="btn qb-add-standalone-btn"
-                    onClick={() => handleAddStandalone(sq)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAddStandalone(sq);
+                    }}
                     disabled={insertingId === sq.id}
                     title="Insert this subquestion as a standalone question into paper"
                   >
@@ -183,22 +253,34 @@ function SubquestionsModal({
           })}
         </div>
 
-        {/* Modal Footer */}
-        <div className="qb-subq-modal-footer">
+        {/* Modal Actions Footer */}
+        <div
+          className="modal-actions"
+          style={{
+            padding: '14px 20px',
+            borderTop: '1px solid #e2e8f0',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            gap: 10,
+            background: '#fafbfc',
+          }}
+        >
+          <button className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
           <button
             className="btn btn-primary"
             disabled={selectedSubqIds.size === 0 || isInsertingSet}
             onClick={handleAddSet}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', fontSize: 13, fontWeight: 600 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <Plus size={14} /> Add {selectedSubqIds.size} Question{selectedSubqIds.size === 1 ? '' : 's'}
-          </button>
-          <button className="btn btn-secondary" onClick={onClose} style={{ padding: '7px 14px', fontSize: 13 }}>
-            Cancel
+            <Plus size={16} /> Add {selectedSubqIds.size} Question{selectedSubqIds.size === 1 ? '' : 's'}
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

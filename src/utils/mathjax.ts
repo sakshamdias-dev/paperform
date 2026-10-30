@@ -9,9 +9,16 @@ declare global {
 let isRendering = false;
 let pendingRender = false;
 
+export function cleanImageHtml(html: string | undefined | null): string {
+  if (!html) return '';
+  return html
+    .replace(/(<img\b[^>]*?style=["'][^"']*?)outline\s*:\s*[^;"]+;?/gi, '$1')
+    .replace(/(<img\b[^>]*?)\s*style=["']\s*["']/gi, '$1');
+}
+
 export function preprocessMathHtml(html: string | undefined | null): string {
   if (!html) return '';
-  let processed = html.replace(/&nbsp;/g, ' ');
+  let processed = cleanImageHtml(html.replace(/&nbsp;/g, ' '));
 
   // Convert Quill formula embeds: <span class="ql-formula" data-value="...">...</span>
   processed = processed.replace(
