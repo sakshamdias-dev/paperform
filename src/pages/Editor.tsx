@@ -658,13 +658,17 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
   const [isInsideTable, setIsInsideTable] = useState(false);
   const activeTableCellRef = useRef<HTMLTableCellElement | null>(null);
   const lastSelectionRef = useRef<{ index: number; length: number } | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const openMathDialogRef = useRef(openMathDialog);
+  openMathDialogRef.current = openMathDialog;
 
   const syncEditorHtml = useCallback(() => {
     if (!quillRef.current) return;
     const quill = quillRef.current.getEditor();
     quill.update(ReactQuill.Quill.sources.USER);
-    onChange(cleanImageHtml(quill.root.innerHTML));
-  }, [onChange]);
+    onChangeRef.current(cleanImageHtml(quill.root.innerHTML));
+  }, []);
 
   const confirmTableInsert = () => {
     if (quillRef.current && tableRows > 0 && tableCols > 0) {
@@ -681,8 +685,14 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
           if (firstCell) {
             activeTableCellRef.current = firstCell;
             setIsInsideTable(true);
+            const firstCellBlot = quill.scroll.find(firstCell) as any;
+            if (firstCellBlot && typeof firstCellBlot.offset === 'function') {
+              const offset = firstCellBlot.offset(quill.scroll);
+              quill.setSelection(offset, 0, ReactQuill.Quill.sources.SILENT);
+              lastSelectionRef.current = { index: offset, length: 0 };
+            }
           }
-          onChange(cleanImageHtml(quill.root.innerHTML));
+          onChangeRef.current(cleanImageHtml(quill.root.innerHTML));
         }, 30);
       }
     }
@@ -694,6 +704,17 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
     const quill = quillRef.current.getEditor();
     let cell = activeTableCellRef.current;
 
+    if (!cell || !quill.root.contains(cell)) {
+      const range = quill.getSelection() || lastSelectionRef.current;
+      if (range) {
+        const [line] = quill.getLine(range.index);
+        const lineDom = line?.domNode as HTMLElement | undefined;
+        const foundFromLine = lineDom?.closest?.('td, th') as HTMLTableCellElement | null;
+        if (foundFromLine && quill.root.contains(foundFromLine)) {
+          cell = foundFromLine;
+        }
+      }
+    }
     if (!cell || !quill.root.contains(cell)) {
       const sel = window.getSelection();
       const anchorEl = sel?.anchorNode instanceof HTMLElement ? sel.anchorNode : sel?.anchorNode?.parentElement;
@@ -707,118 +728,143 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
     }
     if (!cell) return;
 
-    const tr = cell.closest('tr') as HTMLTableRowElement | null;
-    const table = cell.closest('table') as HTMLTableElement | null;
-    if (!tr || !table) return;
+    const cellBlot = quill.scroll.find(cell) as any;
+    const rowBlot = cellBlot?.parent;
+    const bodyBlot = rowBlot?.parent;
+    const tableBlot = bodyBlot?.parent;
 
-    ensureQuillTableStructure(table);
+    if (!cellBlot || !rowBlot || !bodyBlot || !tableBlot) return;
 
-    const tbody = (table.querySelector('tbody') || table) as HTMLElement;
-    const rows = Array.from(table.querySelectorAll('tr'));
-    const rowIndex = rows.indexOf(tr);
-    const cellsInRow = Array.from(tr.children) as HTMLTableCellElement[];
-    const colIndex = Math.max(0, cellsInRow.indexOf(cell));
-    const colCount = Math.max(1, cellsInRow.length);
+    // Ensure every existing row has a distinct data-row ID so Quill's TableRow.checkMerge
+    // never collapses adjacent rows together.
+    const seenRowIds = new Set<string>();
+    bodyBlot.children.forEach((rBlot: any) => {
+      const firstCellDom = rBlot.children.head?.domNode as HTMLElement | undefined;
+      let rId = firstCellDom?.getAttribute('data-row') || '';
+      if (!rId || seenRowIds.has(rId)) {
+        rId = `row-${Math.random().toString(36).slice(2, 7)}`;
+      }
+      seenRowIds.add(rId);
+      rBlot.children.forEach((cBlot: any) => {
+        if (cBlot.domNode?.getAttribute('data-row') !== rId) {
+          cBlot.domNode?.setAttribute('data-row', rId);
+        }
+      });
+    });
 
-    if (action === 'del-table') {
-      table.remove();
-      if (!quill.root.innerHTML.trim()) {
-        quill.root.innerHTML = '<p><br></p>';
+    const rowIndex = typeof rowBlot.rowOffset === 'function' ? rowBlot.rowOffset() : bodyBlot.children.indexOf(rowBlot);
+    const colIndex = typeof cellBlot.cellOffset === 'function' ? cellBlot.cellOffset() : rowBlot.children.indexOf(cellBlot);
+    const colCount = Math.max(1, rowBlot.children.length);
+    const rowCount = Math.max(1, bodyBlot.children.length);
+
+    const removeEntireTable = () => {
+      const tableOffset = typeof tableBlot.offset === 'function' ? tableBlot.offset(quill.scroll) : 0;
+      tableBlot.remove();
+      if (quill.scroll.children.length === 0) {
+        const p = quill.scroll.create('block') as any;
+        quill.scroll.appendChild(p);
+        p.optimize?.();
       }
       activeTableCellRef.current = null;
       setIsInsideTable(false);
       syncEditorHtml();
+      const safeIndex = Math.min(tableOffset, Math.max(0, quill.getLength() - 1));
+      quill.setSelection(safeIndex, 0, ReactQuill.Quill.sources.SILENT);
+      lastSelectionRef.current = { index: safeIndex, length: 0 };
+    };
+
+    const focusBlotCell = (targetCellBlot: any) => {
+      if (!targetCellBlot || !targetCellBlot.domNode) return;
+      activeTableCellRef.current = targetCellBlot.domNode as HTMLTableCellElement;
+      setIsInsideTable(true);
+      const offset = typeof targetCellBlot.offset === 'function' ? targetCellBlot.offset(quill.scroll) : 0;
+      quill.setSelection(offset, 0, ReactQuill.Quill.sources.SILENT);
+      lastSelectionRef.current = { index: offset, length: 0 };
+      focusTableCell(targetCellBlot.domNode as HTMLElement);
+    };
+
+    if (action === 'del-table') {
+      removeEntireTable();
       return;
     }
 
     if (action === 'row-above' || action === 'row-below') {
-      const newRow = document.createElement('tr');
+      const insertRowIdx = action === 'row-above' ? rowIndex : rowIndex + 1;
       const newRowId = `row-${Math.random().toString(36).slice(2, 7)}`;
+      const newRowBlot = quill.scroll.create('table-row') as any;
       for (let c = 0; c < colCount; c++) {
-        const td = document.createElement('td');
-        td.setAttribute('data-row', newRowId);
-        td.innerHTML = '<br>';
-        newRow.appendChild(td);
+        const newCellBlot = quill.scroll.create('table', newRowId) as any;
+        newRowBlot.appendChild(newCellBlot);
+        newCellBlot.optimize?.();
       }
-      if (action === 'row-above') {
-        tbody.insertBefore(newRow, tr);
-      } else {
-        tbody.insertBefore(newRow, tr.nextSibling);
-      }
-      const nextCell = (newRow.children[colIndex] || newRow.children[0]) as HTMLTableCellElement;
-      activeTableCellRef.current = nextCell;
-      setIsInsideTable(true);
+      const refRowBlot = bodyBlot.children.at(insertRowIdx) || null;
+      bodyBlot.insertBefore(newRowBlot, refRowBlot);
       syncEditorHtml();
-      focusTableCell(nextCell);
+      const targetCellBlot = newRowBlot.children.at(colIndex) || newRowBlot.children.head;
+      focusBlotCell(targetCellBlot);
       return;
     }
 
     if (action === 'col-left' || action === 'col-right') {
-      const insertIdx = action === 'col-left' ? colIndex : colIndex + 1;
-      let targetCell: HTMLTableCellElement | null = null;
-      rows.forEach((r, rIdx) => {
-        const rCells = Array.from(r.children) as HTMLElement[];
-        const rowId = rCells[0]?.getAttribute('data-row') || `row-${Math.random().toString(36).slice(2, 7)}`;
-        const td = document.createElement('td');
-        td.setAttribute('data-row', rowId);
-        td.innerHTML = '<br>';
-        const refNode = rCells[insertIdx] || null;
-        r.insertBefore(td, refNode);
+      const insertColIdx = action === 'col-left' ? colIndex : colIndex + 1;
+      let targetCellBlot: any = null;
+      let rIdx = 0;
+      bodyBlot.children.forEach((rBlot: any) => {
+        const refCellBlot = rBlot.children.at(insertColIdx) || null;
+        const firstCellDom = rBlot.children.head?.domNode as HTMLElement | undefined;
+        const rowId = firstCellDom?.getAttribute('data-row') || `row-${Math.random().toString(36).slice(2, 7)}`;
+        const newCellBlot = quill.scroll.create('table', rowId) as any;
+        rBlot.insertBefore(newCellBlot, refCellBlot);
+        newCellBlot.optimize?.();
         if (rIdx === rowIndex) {
-          targetCell = td;
+          targetCellBlot = newCellBlot;
         }
+        rIdx++;
       });
-      if (targetCell) {
-        activeTableCellRef.current = targetCell;
-        setIsInsideTable(true);
-        focusTableCell(targetCell);
-      }
       syncEditorHtml();
+      if (targetCellBlot) {
+        focusBlotCell(targetCellBlot);
+      }
       return;
     }
 
     if (action === 'del-row') {
-      if (rows.length <= 1) {
-        table.remove();
-        if (!quill.root.innerHTML.trim()) {
-          quill.root.innerHTML = '<p><br></p>';
-        }
-        activeTableCellRef.current = null;
-        setIsInsideTable(false);
-        syncEditorHtml();
+      if (rowCount <= 1) {
+        removeEntireTable();
         return;
       }
-      const fallbackRow = rows[rowIndex + 1] || rows[rowIndex - 1];
-      tr.remove();
-      const nextCell = (fallbackRow?.children[Math.min(colIndex, fallbackRow.children.length - 1)] || null) as HTMLTableCellElement | null;
-      activeTableCellRef.current = nextCell;
-      setIsInsideTable(Boolean(nextCell));
+      const fallbackRowBlot = rowBlot.next || rowBlot.prev;
+      rowBlot.remove();
       syncEditorHtml();
-      focusTableCell(nextCell);
+      const nextCellBlot = fallbackRowBlot?.children?.at(Math.min(colIndex, fallbackRowBlot.children.length - 1)) || fallbackRowBlot?.children?.head;
+      if (nextCellBlot) {
+        focusBlotCell(nextCellBlot);
+      } else {
+        activeTableCellRef.current = null;
+        setIsInsideTable(false);
+      }
       return;
     }
 
     if (action === 'del-col') {
       if (colCount <= 1) {
-        table.remove();
-        if (!quill.root.innerHTML.trim()) {
-          quill.root.innerHTML = '<p><br></p>';
-        }
-        activeTableCellRef.current = null;
-        setIsInsideTable(false);
-        syncEditorHtml();
+        removeEntireTable();
         return;
       }
-      rows.forEach((r) => {
-        const target = r.children[colIndex];
-        if (target) target.remove();
+      bodyBlot.children.forEach((rBlot: any) => {
+        const target = rBlot.children.at(colIndex);
+        if (target) {
+          target.remove();
+        }
       });
-      const remainingCells = Array.from(tr.children) as HTMLTableCellElement[];
-      const nextCell = remainingCells[Math.min(colIndex, remainingCells.length - 1)] || null;
-      activeTableCellRef.current = nextCell;
-      setIsInsideTable(Boolean(nextCell));
       syncEditorHtml();
-      focusTableCell(nextCell);
+      const nextCellBlot = rowBlot.children.at(Math.min(colIndex, rowBlot.children.length - 1)) || rowBlot.children.head;
+      if (nextCellBlot) {
+        focusBlotCell(nextCellBlot);
+      } else {
+        activeTableCellRef.current = null;
+        setIsInsideTable(false);
+      }
     }
   }, [syncEditorHtml]);
 
@@ -853,13 +899,13 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
           } else {
             quill.formatLine(0, Math.max(1, quill.getLength()), 'align', normalizedAlign, ReactQuill.Quill.sources.USER);
           }
-          onChange(cleanImageHtml(quill.root.innerHTML));
+          onChangeRef.current(cleanImageHtml(quill.root.innerHTML));
         },
         math: () => {
           if (!quillRef.current) return;
           const quill = quillRef.current.getEditor();
           const range = lastSelectionRef.current || quill.getSelection(true) || { index: Math.max(0, quill.getLength() - 1), length: 0 };
-          openMathDialog((latex) => {
+          openMathDialogRef.current((latex) => {
             const mathText = `\\(${latex}\\)`;
             quill.insertText(range.index, mathText, 'user');
             quill.setSelection(range.index + mathText.length, 0);
@@ -868,26 +914,59 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
       }
     },
     table: true
-  }), [toolbarId, openMathDialog, onChange]);
+  }), [toolbarId]);
 
-  const checkTableContext = useCallback((targetNode?: Node | null) => {
+  const checkTableContext = useCallback((targetNode?: Node | null, quillRange?: { index: number; length: number } | null) => {
     if (!quillRef.current) return;
     const quill = quillRef.current.getEditor();
+
+    if (targetNode) {
+      const el = targetNode instanceof HTMLElement ? targetNode : targetNode.parentElement;
+      const cell = el?.closest('td, th') as HTMLTableCellElement | null;
+      if (cell && quill.root.contains(cell)) {
+        activeTableCellRef.current = cell;
+        setIsInsideTable(true);
+        return;
+      }
+      if (el && quill.root.contains(el)) {
+        activeTableCellRef.current = null;
+        setIsInsideTable(false);
+        return;
+      }
+    }
+
+    const range = quillRange !== undefined ? quillRange : quill.getSelection();
+    if (range) {
+      const [line] = quill.getLine(range.index);
+      const lineDom = line?.domNode as HTMLElement | undefined;
+      const cellFromLine = lineDom?.closest?.('td, th') as HTMLTableCellElement | null;
+      if (cellFromLine && quill.root.contains(cellFromLine)) {
+        activeTableCellRef.current = cellFromLine;
+        setIsInsideTable(true);
+        return;
+      }
+    }
+
     const sel = window.getSelection();
-    const node = targetNode || sel?.anchorNode;
-    const el = node instanceof HTMLElement ? node : node?.parentElement;
-    const cell = el?.closest('td, th') as HTMLTableCellElement | null;
-    if (cell && quill.root.contains(cell)) {
-      activeTableCellRef.current = cell;
-      setIsInsideTable(true);
-    } else {
-      activeTableCellRef.current = null;
-      setIsInsideTable(false);
+    const anchorNode = sel?.anchorNode;
+    const anchorEl = anchorNode instanceof HTMLElement ? anchorNode : anchorNode?.parentElement;
+    if (anchorEl && quill.root.contains(anchorEl)) {
+      const cellFromSel = anchorEl.closest('td, th') as HTMLTableCellElement | null;
+      if (cellFromSel && quill.root.contains(cellFromSel)) {
+        activeTableCellRef.current = cellFromSel;
+        setIsInsideTable(true);
+      } else {
+        activeTableCellRef.current = null;
+        setIsInsideTable(false);
+      }
     }
   }, []);
 
   const handleEditorMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
+    if (target.closest('.quill-table-context-bar') || target.closest('.ql-toolbar')) {
+      return;
+    }
     checkTableContext(target);
     if (target.tagName === 'IMG' && onImageClick) {
       if ((target as HTMLImageElement).style.outline) {
@@ -988,7 +1067,10 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
       {isInsideTable && (
         <div
           className="quill-table-context-bar"
-          onMouseDown={(e) => e.preventDefault()}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
         >
           <span className="quill-table-bar-label">
             <Table2 size={13} /> Table:
@@ -1026,7 +1108,7 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
         onChangeSelection={(range) => {
           if (range) {
             lastSelectionRef.current = { index: range.index, length: range.length };
-            checkTableContext();
+            checkTableContext(null, range);
           }
         }}
         useSemanticHTML={false}
@@ -1099,6 +1181,7 @@ export default function Editor() {
     topics,
     categories,
     sharedQuestions,
+    fetchQuestionPapers,
     fetchPaperQuestions,
     fetchQuestions,
     fetchSharedQuestions,
@@ -1722,15 +1805,26 @@ export default function Editor() {
 
   const paperRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
+  const [loadingPaper, setLoadingPaper] = useState(() => !questionPapers.some(qp => qp.id === id));
 
   useEffect(() => {
+    let active = true;
     if (id) {
+      if (!useStore.getState().questionPapers.some(qp => qp.id === id)) {
+        setLoadingPaper(true);
+        fetchQuestionPapers().finally(() => {
+          if (active) setLoadingPaper(false);
+        });
+      } else {
+        setLoadingPaper(false);
+      }
       fetchPaperQuestions(id);
       fetchQuestions();
       fetchSharedQuestions();
       fetchLookups();
     }
-  }, [id, fetchPaperQuestions, fetchQuestions, fetchSharedQuestions, fetchLookups]);
+    return () => { active = false; };
+  }, [id, fetchQuestionPapers, fetchPaperQuestions, fetchQuestions, fetchSharedQuestions, fetchLookups]);
 
   const paperQuestionsList = useMemo(() => {
     return paperQuestions.get(id || '') || [];
@@ -2770,6 +2864,14 @@ export default function Editor() {
 
 
   if (!paper) {
+    if (loadingPaper) {
+      return (
+        <div className="editor-layout" style={{ alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+          <Loader2 size={28} className="spin" />
+          <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Loading paper...</p>
+        </div>
+      );
+    }
     return (
       <div className="editor-layout" style={{ alignItems: 'center', justifyContent: 'center' }}>
         <p>Paper not found</p>
