@@ -18,17 +18,33 @@ export function cleanImageHtml(html: string | undefined | null): string {
 
 export function preprocessMathHtml(html: string | undefined | null): string {
   if (!html) return '';
-  let processed = cleanImageHtml(html.replace(/&nbsp;/g, ' '));
+  let processed = cleanImageHtml(html);
 
   // Convert Quill formula embeds: <span class="ql-formula" data-value="...">...</span>
   processed = processed.replace(
     /<span[^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*data-value=["']([^"']*)["'][^>]*>[\s\S]*?<\/span>/gi,
-    (_match, val) => `\\(${val}\\)`
+    (_match, val) => `\\(${String(val).replace(/&nbsp;/g, ' ')}\\)`
   );
   processed = processed.replace(
     /<span[^>]*data-value=["']([^"']*)["'][^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*>[\s\S]*?<\/span>/gi,
-    (_match, val) => `\\(${val}\\)`
+    (_match, val) => `\\(${String(val).replace(/&nbsp;/g, ' ')}\\)`
   );
+
+  // Clean &nbsp; only inside LaTeX math delimiters so MathJax parses formulas cleanly while preserving blank spaces in text
+  processed = processed
+    .replace(/\\\([\s\S]*?\\\)/g, (m) => m.replace(/&nbsp;/g, ' '))
+    .replace(/\\\[[\s\S]*?\\\]/g, (m) => m.replace(/&nbsp;/g, ' '))
+    .replace(/\$\$[\s\S]*?\$\$/g, (m) => m.replace(/&nbsp;/g, ' '));
+
+  // Convert isolated single &nbsp; between words (from Quill 2 getSemanticHTML) back to normal spaces
+  // so text-align: justify and word wrapping work properly, while preserving all multi-space runs (&nbsp;&nbsp;, " &nbsp;") and empty lines (<p>&nbsp;</p>)
+  processed = processed
+    .replace(/([^\s>&;])&nbsp;([^\s<&])/g, '$1 $2')
+    .replace(/([^\s>&;])&nbsp;([^\s<&])/g, '$1 $2');
+
+  // Ensure empty Quill paragraphs (<p><br></p>, <p></p>) render as visible blank lines
+  processed = processed
+    .replace(/<p(\s[^>]*)?>\s*(?:<br\s*\/?>)?\s*<\/p>/gi, '<p$1>&nbsp;</p>');
 
   return processed;
 }

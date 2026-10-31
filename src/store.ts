@@ -34,6 +34,7 @@ const LOCAL_LOOKUPS_KEY = 'questforma_lookups_v1';
 const MIGRATION_OPTIONAL_COLUMNS = new Set([
   'chapter_id', 'topic_id', 'category_id', 'cognitive_level', 'marks',
   'sub_numbering_style', 'course_name', 'subject_name', 'class_name', 'chapter', 'category',
+  'subquestions', 'parent_id',
 ]);
 
 type WriteResult = PromiseLike<{ error: { code?: string; message: string } | null }>;
@@ -197,7 +198,7 @@ interface AppState {
     subNumberingStyle?: PaperQuestion['subNumberingStyle']
   ) => Promise<string>;
 
-  shareQuestionToBank: (question: { content: string; questionType: QuestionType; options?: string[]; difficulty?: Difficulty; typeHeader?: string; topic?: string; meta?: QuestionMeta; marks?: number }) => Promise<string | null>;
+  shareQuestionToBank: (question: { content: string; questionType: QuestionType; options?: string[]; difficulty?: Difficulty; typeHeader?: string; topic?: string; meta?: QuestionMeta; marks?: number; subquestions?: SharedQuestion['subquestions'] }) => Promise<string | null>;
   importSharedQuestionToPaper: (paperId: string, sharedQ: SharedQuestion, section?: string, marks?: number, parentId?: string, isOptional?: boolean) => Promise<string>;
   sendQuestionUsageNotification: (sharedQ: SharedQuestion) => Promise<void>;
   markNotificationAsRead: (id: string) => Promise<void>;
@@ -436,6 +437,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   fetchSharedQuestions: async () => {
+    const localStored = getStoredLocalSharedQuestions();
     try {
       const { data, error } = await supabase
         .from('shared_questions')
@@ -443,30 +445,48 @@ export const useStore = create<AppState>()((set, get) => ({
         .order('usage_count', { ascending: false });
 
       if (!error && data && data.length > 0) {
-        const list: SharedQuestion[] = data.map(row => ({
-          id: row.id,
-          content: row.content,
-          contentHash: row.content_hash,
-          createdByUserId: row.created_by_user_id,
-          authorName: row.author_name || 'Fellow Educator',
-          courseId: row.course_id,
-          subjectId: row.subject_id,
-          classId: row.class_id,
-          topic: row.topic,
-          questionType: row.question_type,
-          options: row.options || [],
-          difficulty: row.difficulty || 'medium',
-          typeHeader: row.type_header,
-          usageCount: row.usage_count || 0,
-          courseName: row.course_name || undefined,
-          subjectName: row.subject_name || undefined,
-          className: row.class_name || undefined,
-          chapter: row.chapter || undefined,
-          category: row.category || undefined,
-          cognitiveLevel: row.cognitive_level || DEFAULT_COGNITIVE_LEVEL,
-          marks: row.marks ?? undefined,
-          createdAt: new Date(row.created_at).getTime(),
-        }));
+        const dbList: SharedQuestion[] = data.map(row => {
+          const matchingLocal =
+            localStored.find(lq => lq.id === row.id || (row.content_hash && lq.contentHash === row.content_hash)) ||
+            INITIAL_SHARED_QUESTIONS.find(iq => iq.id === row.id || (row.content_hash && iq.contentHash === row.content_hash));
+          const rowSubqs = Array.isArray(row.subquestions) && row.subquestions.length > 0
+            ? row.subquestions
+            : matchingLocal?.subquestions;
+          return {
+            id: row.id,
+            content: row.content,
+            contentHash: row.content_hash,
+            createdByUserId: row.created_by_user_id,
+            authorName: row.author_name || 'Fellow Educator',
+            courseId: row.course_id,
+            subjectId: row.subject_id,
+            classId: row.class_id,
+            topic: row.topic,
+            questionType: row.question_type,
+            options: row.options || [],
+            difficulty: row.difficulty || 'medium',
+            typeHeader: row.type_header,
+            usageCount: row.usage_count || 0,
+            courseName: row.course_name || undefined,
+            subjectName: row.subject_name || undefined,
+            className: row.class_name || undefined,
+            chapter: row.chapter || undefined,
+            category: row.category || undefined,
+            cognitiveLevel: row.cognitive_level || DEFAULT_COGNITIVE_LEVEL,
+            marks: row.marks ?? matchingLocal?.marks ?? undefined,
+            subquestions: rowSubqs && rowSubqs.length > 0 ? rowSubqs : undefined,
+            parentId: row.parent_id || matchingLocal?.parentId || undefined,
+            createdAt: new Date(row.created_at).getTime(),
+          };
+        });
+
+        // Ensure seeded multi-part shared questions with subquestions are also available
+        const existingIds = new Set(dbList.map(q => q.id));
+        const existingHashes = new Set(dbList.map(q => q.contentHash).filter(Boolean));
+        const seededMissing = INITIAL_SHARED_QUESTIONS.filter(
+          iq => !existingIds.has(iq.id) && (!iq.contentHash || !existingHashes.has(iq.contentHash))
+        );
+        const list = [...seededMissing, ...dbList];
         set({ sharedQuestions: list });
         saveLocalSharedQuestions(list);
         return;
@@ -474,8 +494,7 @@ export const useStore = create<AppState>()((set, get) => ({
     } catch {}
 
     // Fallback to local storage / seeded list
-    const stored = getStoredLocalSharedQuestions();
-    set({ sharedQuestions: stored });
+    set({ sharedQuestions: localStored });
   },
 
   fetchNotifications: async () => {
@@ -1152,15 +1171,56 @@ export const useStore = create<AppState>()((set, get) => ({
 
     // Shared Question Bank: Auto-contribute if user's questions are NOT private
     if (originType === 'ORIGINAL' && !user.keepQuestionsPrivate && content.trim().length > 10) {
-      void shareQuestionToBank({
-        content,
-        questionType,
-        options,
-        difficulty,
-        typeHeader,
-        meta: { ...meta, courseId: resolvedCourseId, subjectId: resolvedSubjectId, classId: resolvedClassId, cognitiveLevel },
-        marks: finalMarks,
-      });
+      if (!parentId) {
+        void shareQuestionToBank({
+          content,
+          questionType,
+          options,
+          difficulty,
+          typeHeader,
+          meta: { ...meta, courseId: resolvedCourseId, subjectId: resolvedSubjectId, classId: resolvedClassId, cognitiveLevel },
+          marks: finalMarks,
+        });
+      } else {
+        // Attach this subquestion to the parent SharedQuestion in the shared bank
+        const allPQsForPaper = get().paperQuestions.get(paperId) || [];
+        const parentPQ = allPQsForPaper.find(p => p.id === parentId);
+        const parentQ = parentPQ ? get().questions.find(q => q.id === parentPQ.questionId) : undefined;
+        if (parentQ) {
+          const childPQs = allPQsForPaper.filter(p => p.parentId === parentId);
+          const bankSubqs = childPQs.map(cpq => {
+            const cq = get().questions.find(q => q.id === cpq.questionId);
+            return {
+              id: cpq.questionId,
+              content: cq?.content || '',
+              marks: cpq.marks || 1,
+              questionType: cq?.questionType || 'subjective',
+              options: cq?.options || [],
+              difficulty: cq?.difficulty || 'medium',
+              cognitiveLevel: cq?.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL,
+              explanation: cq?.explanation,
+            };
+          });
+          void shareQuestionToBank({
+            content: parentQ.content,
+            questionType: parentQ.questionType,
+            options: parentQ.options,
+            difficulty: parentQ.difficulty,
+            typeHeader: parentQ.typeHeader,
+            meta: {
+              courseId: parentQ.courseId || resolvedCourseId,
+              subjectId: parentQ.subjectId || resolvedSubjectId,
+              classId: parentQ.classId || resolvedClassId,
+              chapterId: parentQ.chapterId,
+              topicId: parentQ.topicId,
+              categoryId: parentQ.categoryId,
+              cognitiveLevel: parentQ.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL,
+            },
+            marks: parentPQ?.marks || parentQ.marks,
+            subquestions: bankSubqs,
+          });
+        }
+      }
     }
 
     return pqId;
@@ -1175,6 +1235,7 @@ export const useStore = create<AppState>()((set, get) => ({
     topic,
     meta,
     marks,
+    subquestions,
   }) => {
     const { user, sharedQuestions, courses, subjects, classes, chapters, topics, categories } = get();
     if (!user || user.keepQuestionsPrivate) return null;
@@ -1200,6 +1261,20 @@ export const useStore = create<AppState>()((set, get) => ({
     });
 
     if (existing) {
+      if (subquestions && subquestions.length > 0) {
+        const updatedList = sharedQuestions.map(sq =>
+          sq.id === existing.id
+            ? { ...sq, subquestions, marks: marks ?? sq.marks }
+            : sq
+        );
+        set({ sharedQuestions: updatedList });
+        saveLocalSharedQuestions(updatedList);
+        await resilientWrite(
+          (row) => supabase.from('shared_questions').update(row).eq('id', existing.id),
+          { subquestions, marks: marks ?? existing.marks ?? null },
+          'updateSharedQuestionSubquestions'
+        );
+      }
       return existing.id;
     }
 
@@ -1223,6 +1298,7 @@ export const useStore = create<AppState>()((set, get) => ({
       category: names.category,
       cognitiveLevel,
       marks: marks ?? undefined,
+      subquestions: subquestions && subquestions.length > 0 ? subquestions : undefined,
       createdAt: Date.now(),
     };
 
@@ -1249,6 +1325,7 @@ export const useStore = create<AppState>()((set, get) => ({
       category: names.category || null,
       cognitive_level: cognitiveLevel,
       marks: marks ?? null,
+      subquestions: subquestions && subquestions.length > 0 ? subquestions : null,
     }, 'shareQuestionToBank');
 
     return newSharedId;

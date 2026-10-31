@@ -66,6 +66,31 @@ async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<
 MathfieldElement.fontsDirectory = '/fonts';
 MathfieldElement.soundsDirectory = '/sounds';
 
+const BaseQuillImage = ReactQuill.Quill.import('formats/image') as any;
+const QUILL_IMAGE_ATTRIBUTES = ['alt', 'height', 'width', 'style', 'data-x', 'data-y', 'data-align'];
+class CustomQuillImage extends BaseQuillImage {
+  static formats(domNode: HTMLElement) {
+    return QUILL_IMAGE_ATTRIBUTES.reduce((formats: Record<string, string>, attribute) => {
+      if (domNode.hasAttribute(attribute)) {
+        formats[attribute] = domNode.getAttribute(attribute) || '';
+      }
+      return formats;
+    }, {});
+  }
+  format(name: string, value: string) {
+    if (QUILL_IMAGE_ATTRIBUTES.includes(name)) {
+      if (value) {
+        this.domNode.setAttribute(name, value);
+      } else {
+        this.domNode.removeAttribute(name);
+      }
+    } else {
+      super.format(name, value);
+    }
+  }
+}
+ReactQuill.Quill.register(CustomQuillImage, true);
+
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
@@ -85,6 +110,8 @@ import { Rnd } from 'react-rnd';
 import {
   Plus,
   Trash2,
+  Copy,
+  Move,
   GripVertical,
   ArrowLeft,
   Check,
@@ -232,6 +259,7 @@ interface SortableQuestionProps {
   onSelect: () => void;
   onRemove: () => void;
   onEdit: () => void;
+  onCopy?: () => void;
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   onMoveUp?: () => void;
@@ -248,6 +276,7 @@ interface SortableQuestionProps {
   onMoveSectionDown?: (section: string) => void;
   subQuestions?: SubQuestionNode[];
   onEditSubQuestion?: (pqId: string) => void;
+  onCopySubQuestion?: (pqId: string) => void;
   onRemoveSubQuestion?: (pqId: string, qId: string) => void;
   onMoveSubQuestionUp?: (pqId: string) => void;
   onMoveSubQuestionDown?: (pqId: string) => void;
@@ -281,6 +310,7 @@ function SortableQuestion({
   onSelect,
   onRemove,
   onEdit,
+  onCopy,
   canMoveUp,
   canMoveDown,
   onMoveUp,
@@ -294,6 +324,7 @@ function SortableQuestion({
   onMoveSectionDown,
   subQuestions,
   onEditSubQuestion,
+  onCopySubQuestion,
   onRemoveSubQuestion,
   onMoveSubQuestionUp,
   onMoveSubQuestionDown,
@@ -362,7 +393,7 @@ function SortableQuestion({
             </div>
           </div>
           {sectionDescription && (
-            <div className="section-description-text" dangerouslySetInnerHTML={{ __html: sectionDescription }} />
+            <div className="section-description-text" data-section-name={showSectionHeader} dangerouslySetInnerHTML={{ __html: sectionDescription }} />
           )}
         </div>
       )}
@@ -431,6 +462,15 @@ function SortableQuestion({
               >
                 <Pencil size={13} />
               </button>
+              {onCopy && (
+                <button
+                  className="q-action-icon-btn"
+                  onClick={(e) => { e.stopPropagation(); onCopy(); }}
+                  title="Copy Question"
+                >
+                  <Copy size={13} />
+                </button>
+              )}
               <button
                 className="q-action-icon-btn danger"
                 onClick={(e) => { e.stopPropagation(); onRemove(); }}
@@ -466,7 +506,7 @@ function SortableQuestion({
 
                 return (
                   <React.Fragment key={node.pq.id}>
-                    <div className="q-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, position: 'relative', marginTop: 10 }}>
+                    <div className="q-row" data-question-id={node.question.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, position: 'relative', marginTop: 10 }}>
                       <div style={{ width: 14, flexShrink: 0 }} />
                       <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, minWidth: 0, marginLeft: 24 + depth * 20 }}>
                         {!hasCustomNumber && (
@@ -480,7 +520,7 @@ function SortableQuestion({
                           {node.question.questionType === 'mcq' && node.question.options && node.question.options.length > 0 && (
                             <div className={`q-options q-options-${subMcqLayout}`}>
                               {node.question.options.map((opt, oi) => (
-                                <span key={oi} className="q-option" style={{ display: 'inline-flex', alignItems: 'flex-start' }}>
+                                <span key={oi} className="q-option" data-option-index={oi} style={{ display: 'inline-flex', alignItems: 'flex-start' }}>
                                   <span style={{ marginRight: '4px' }}>{String.fromCharCode(65 + oi)}.</span>
                                   <span dangerouslySetInnerHTML={{ __html: preprocessMathHtml(opt) }} />
                                 </span>
@@ -505,6 +545,11 @@ function SortableQuestion({
                           {onEditSubQuestion && (
                             <button className="q-action-icon-btn" onClick={(e) => { e.stopPropagation(); onEditSubQuestion(node.pq.id); }} title="Edit Subquestion">
                               <Pencil size={13} />
+                            </button>
+                          )}
+                          {onCopySubQuestion && (
+                            <button className="q-action-icon-btn" onClick={(e) => { e.stopPropagation(); onCopySubQuestion(node.pq.id); }} title="Copy Subquestion">
+                              <Copy size={13} />
                             </button>
                           )}
                           {onRemoveSubQuestion && (
@@ -548,12 +593,10 @@ const CustomToolbar = ({ id = "toolbar" }: { id?: string }) => (
       <button className="ql-script" value="super" title="Superscript" />
     </span>
     <span className="ql-formats">
-      <select className="ql-align" title="Text Alignment">
-        <option value="" />
-        <option value="center" />
-        <option value="right" />
-        <option value="justify" />
-      </select>
+      <button className="ql-align" value="" title="Align Left" />
+      <button className="ql-align" value="center" title="Align Center" />
+      <button className="ql-align" value="right" title="Align Right" />
+      <button className="ql-align" value="justify" title="Justify" />
     </span>
     <span className="ql-formats">
       <button className="ql-image" title="Insert Image">
@@ -570,44 +613,252 @@ const CustomToolbar = ({ id = "toolbar" }: { id?: string }) => (
   </div>
 );
 
+function ensureQuillTableStructure(tableEl: HTMLTableElement) {
+  const usedIds = new Set<string>();
+  const rows = Array.from(tableEl.querySelectorAll('tr'));
+  rows.forEach((tr) => {
+    const cells = Array.from(tr.children) as HTMLElement[];
+    let rowId = cells[0]?.getAttribute('data-row') || '';
+    if (!rowId || usedIds.has(rowId)) {
+      rowId = `row-${Math.random().toString(36).slice(2, 7)}`;
+    }
+    usedIds.add(rowId);
+    cells.forEach((cell) => {
+      cell.setAttribute('data-row', rowId);
+      if (!cell.innerHTML.trim()) {
+        cell.innerHTML = '<br>';
+      }
+    });
+  });
+}
+
+function focusTableCell(cellEl: HTMLElement | null | undefined) {
+  if (!cellEl) return;
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  range.selectNodeContents(cellEl);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "toolbar", onImageClick }: {
   value: string;
   onChange: (val: string) => void;
   placeholder?: string;
   openMathDialog: (onInsert: (latex: string) => void) => void;
   toolbarId?: string;
-  onImageClick?: (imgElement: HTMLImageElement, htmlValue: string, onChange: (newHtml: string) => void) => void;
+  onImageClick?: (imgElement: HTMLImageElement, htmlValue: string, onChange: (newHtml: string) => void, startEvent?: React.MouseEvent) => void;
 }) {
   const quillRef = useRef<ReactQuill>(null);
   const [showTableDialog, setShowTableDialog] = useState(false);
   const [tableRows, setTableRows] = useState(2);
   const [tableCols, setTableCols] = useState(2);
+  const [isInsideTable, setIsInsideTable] = useState(false);
+  const activeTableCellRef = useRef<HTMLTableCellElement | null>(null);
+  const lastSelectionRef = useRef<{ index: number; length: number } | null>(null);
+
+  const syncEditorHtml = useCallback(() => {
+    if (!quillRef.current) return;
+    const quill = quillRef.current.getEditor();
+    quill.update(ReactQuill.Quill.sources.USER);
+    onChange(cleanImageHtml(quill.root.innerHTML));
+  }, [onChange]);
 
   const confirmTableInsert = () => {
     if (quillRef.current && tableRows > 0 && tableCols > 0) {
       const quill = quillRef.current.getEditor();
-      const range = quill.getSelection();
+      quill.focus();
+      const range = lastSelectionRef.current || quill.getSelection(true) || { index: Math.max(0, quill.getLength() - 1), length: 0 };
       const tableModule = quill.getModule('table') as any;
       if (tableModule) {
-        quill.insertText(range?.index || quill.getLength() - 1, '\n');
-        tableModule.insertTable(tableRows + 1, tableCols);
+        quill.setSelection(range.index, 0, ReactQuill.Quill.sources.SILENT);
+        tableModule.insertTable(tableRows, tableCols);
         setTimeout(() => {
           quill.focus();
-        }, 50);
+          const firstCell = quill.root.querySelector('td') as HTMLTableCellElement | null;
+          if (firstCell) {
+            activeTableCellRef.current = firstCell;
+            setIsInsideTable(true);
+          }
+          onChange(cleanImageHtml(quill.root.innerHTML));
+        }, 30);
       }
     }
     setShowTableDialog(false);
   };
+
+  const handleTableAction = useCallback((action: 'row-above' | 'row-below' | 'col-left' | 'col-right' | 'del-row' | 'del-col' | 'del-table') => {
+    if (!quillRef.current) return;
+    const quill = quillRef.current.getEditor();
+    let cell = activeTableCellRef.current;
+
+    if (!cell || !quill.root.contains(cell)) {
+      const sel = window.getSelection();
+      const anchorEl = sel?.anchorNode instanceof HTMLElement ? sel.anchorNode : sel?.anchorNode?.parentElement;
+      const foundCell = anchorEl?.closest('td, th') as HTMLTableCellElement | null;
+      if (foundCell && quill.root.contains(foundCell)) {
+        cell = foundCell;
+      }
+    }
+    if (!cell || !quill.root.contains(cell)) {
+      cell = quill.root.querySelector('td, th') as HTMLTableCellElement | null;
+    }
+    if (!cell) return;
+
+    const tr = cell.closest('tr') as HTMLTableRowElement | null;
+    const table = cell.closest('table') as HTMLTableElement | null;
+    if (!tr || !table) return;
+
+    ensureQuillTableStructure(table);
+
+    const tbody = (table.querySelector('tbody') || table) as HTMLElement;
+    const rows = Array.from(table.querySelectorAll('tr'));
+    const rowIndex = rows.indexOf(tr);
+    const cellsInRow = Array.from(tr.children) as HTMLTableCellElement[];
+    const colIndex = Math.max(0, cellsInRow.indexOf(cell));
+    const colCount = Math.max(1, cellsInRow.length);
+
+    if (action === 'del-table') {
+      table.remove();
+      if (!quill.root.innerHTML.trim()) {
+        quill.root.innerHTML = '<p><br></p>';
+      }
+      activeTableCellRef.current = null;
+      setIsInsideTable(false);
+      syncEditorHtml();
+      return;
+    }
+
+    if (action === 'row-above' || action === 'row-below') {
+      const newRow = document.createElement('tr');
+      const newRowId = `row-${Math.random().toString(36).slice(2, 7)}`;
+      for (let c = 0; c < colCount; c++) {
+        const td = document.createElement('td');
+        td.setAttribute('data-row', newRowId);
+        td.innerHTML = '<br>';
+        newRow.appendChild(td);
+      }
+      if (action === 'row-above') {
+        tbody.insertBefore(newRow, tr);
+      } else {
+        tbody.insertBefore(newRow, tr.nextSibling);
+      }
+      const nextCell = (newRow.children[colIndex] || newRow.children[0]) as HTMLTableCellElement;
+      activeTableCellRef.current = nextCell;
+      setIsInsideTable(true);
+      syncEditorHtml();
+      focusTableCell(nextCell);
+      return;
+    }
+
+    if (action === 'col-left' || action === 'col-right') {
+      const insertIdx = action === 'col-left' ? colIndex : colIndex + 1;
+      let targetCell: HTMLTableCellElement | null = null;
+      rows.forEach((r, rIdx) => {
+        const rCells = Array.from(r.children) as HTMLElement[];
+        const rowId = rCells[0]?.getAttribute('data-row') || `row-${Math.random().toString(36).slice(2, 7)}`;
+        const td = document.createElement('td');
+        td.setAttribute('data-row', rowId);
+        td.innerHTML = '<br>';
+        const refNode = rCells[insertIdx] || null;
+        r.insertBefore(td, refNode);
+        if (rIdx === rowIndex) {
+          targetCell = td;
+        }
+      });
+      if (targetCell) {
+        activeTableCellRef.current = targetCell;
+        setIsInsideTable(true);
+        focusTableCell(targetCell);
+      }
+      syncEditorHtml();
+      return;
+    }
+
+    if (action === 'del-row') {
+      if (rows.length <= 1) {
+        table.remove();
+        if (!quill.root.innerHTML.trim()) {
+          quill.root.innerHTML = '<p><br></p>';
+        }
+        activeTableCellRef.current = null;
+        setIsInsideTable(false);
+        syncEditorHtml();
+        return;
+      }
+      const fallbackRow = rows[rowIndex + 1] || rows[rowIndex - 1];
+      tr.remove();
+      const nextCell = (fallbackRow?.children[Math.min(colIndex, fallbackRow.children.length - 1)] || null) as HTMLTableCellElement | null;
+      activeTableCellRef.current = nextCell;
+      setIsInsideTable(Boolean(nextCell));
+      syncEditorHtml();
+      focusTableCell(nextCell);
+      return;
+    }
+
+    if (action === 'del-col') {
+      if (colCount <= 1) {
+        table.remove();
+        if (!quill.root.innerHTML.trim()) {
+          quill.root.innerHTML = '<p><br></p>';
+        }
+        activeTableCellRef.current = null;
+        setIsInsideTable(false);
+        syncEditorHtml();
+        return;
+      }
+      rows.forEach((r) => {
+        const target = r.children[colIndex];
+        if (target) target.remove();
+      });
+      const remainingCells = Array.from(tr.children) as HTMLTableCellElement[];
+      const nextCell = remainingCells[Math.min(colIndex, remainingCells.length - 1)] || null;
+      activeTableCellRef.current = nextCell;
+      setIsInsideTable(Boolean(nextCell));
+      syncEditorHtml();
+      focusTableCell(nextCell);
+    }
+  }, [syncEditorHtml]);
 
   const modules = useMemo(() => ({
     toolbar: {
       container: `#${toolbarId}`,
       handlers: {
         table: () => setShowTableDialog(true),
+        align: function (this: any, alignVal: string | false) {
+          if (!quillRef.current) return;
+          const quill = quillRef.current.getEditor();
+          quill.focus();
+          const normalizedAlign = alignVal || false;
+
+          // If inside a table cell, also apply alignment class/style to the cell
+          if (activeTableCellRef.current && quill.root.contains(activeTableCellRef.current)) {
+            const td = activeTableCellRef.current;
+            td.classList.remove('ql-align-center', 'ql-align-right', 'ql-align-justify');
+            if (normalizedAlign) {
+              td.classList.add(`ql-align-${normalizedAlign}`);
+              td.style.textAlign = normalizedAlign;
+            } else {
+              td.style.textAlign = 'left';
+            }
+          }
+
+          const range = quill.getSelection() || lastSelectionRef.current;
+          if (range && range.length > 0) {
+            quill.formatLine(range.index, range.length, 'align', normalizedAlign, ReactQuill.Quill.sources.USER);
+          } else if (range) {
+            quill.formatLine(range.index, 1, 'align', normalizedAlign, ReactQuill.Quill.sources.USER);
+          } else {
+            quill.formatLine(0, Math.max(1, quill.getLength()), 'align', normalizedAlign, ReactQuill.Quill.sources.USER);
+          }
+          onChange(cleanImageHtml(quill.root.innerHTML));
+        },
         math: () => {
           if (!quillRef.current) return;
           const quill = quillRef.current.getEditor();
-          const range = quill.getSelection(true) || { index: Math.max(0, quill.getLength() - 1) };
+          const range = lastSelectionRef.current || quill.getSelection(true) || { index: Math.max(0, quill.getLength() - 1), length: 0 };
           openMathDialog((latex) => {
             const mathText = `\\(${latex}\\)`;
             quill.insertText(range.index, mathText, 'user');
@@ -617,33 +868,175 @@ function FullQuill({ value, onChange, placeholder, openMathDialog, toolbarId = "
       }
     },
     table: true
-  }), [toolbarId, openMathDialog]);
+  }), [toolbarId, openMathDialog, onChange]);
 
-  const handleEditorClick = (e: React.MouseEvent) => {
+  const checkTableContext = useCallback((targetNode?: Node | null) => {
+    if (!quillRef.current) return;
+    const quill = quillRef.current.getEditor();
+    const sel = window.getSelection();
+    const node = targetNode || sel?.anchorNode;
+    const el = node instanceof HTMLElement ? node : node?.parentElement;
+    const cell = el?.closest('td, th') as HTMLTableCellElement | null;
+    if (cell && quill.root.contains(cell)) {
+      activeTableCellRef.current = cell;
+      setIsInsideTable(true);
+    } else {
+      activeTableCellRef.current = null;
+      setIsInsideTable(false);
+    }
+  }, []);
+
+  const handleEditorMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
+    checkTableContext(target);
     if (target.tagName === 'IMG' && onImageClick) {
       if ((target as HTMLImageElement).style.outline) {
         (target as HTMLImageElement).style.outline = '';
       }
-      onImageClick(target as HTMLImageElement, value, onChange);
+      onImageClick(target as HTMLImageElement, value, onChange, e);
+    }
+  };
+
+  const handleEditorKeyDown = (e: React.KeyboardEvent) => {
+    if (!quillRef.current) return;
+    const quill = quillRef.current.getEditor();
+    const sel = window.getSelection();
+    const anchorEl = sel?.anchorNode instanceof HTMLElement ? sel.anchorNode : sel?.anchorNode?.parentElement;
+    const currentCell = (anchorEl?.closest('td, th') || activeTableCellRef.current) as HTMLTableCellElement | null;
+
+    if (!currentCell || !quill.root.contains(currentCell)) return;
+
+    const tr = currentCell.closest('tr') as HTMLTableRowElement | null;
+    const table = currentCell.closest('table') as HTMLTableElement | null;
+    if (!tr || !table) return;
+
+    // Word-like Tab / Shift+Tab navigation across table cells
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      ensureQuillTableStructure(table);
+      const allCells = Array.from(table.querySelectorAll('td, th')) as HTMLTableCellElement[];
+      const idx = allCells.indexOf(currentCell);
+      if (e.shiftKey) {
+        if (idx > 0) {
+          const prevCell = allCells[idx - 1];
+          activeTableCellRef.current = prevCell;
+          focusTableCell(prevCell);
+        }
+      } else {
+        if (idx >= 0 && idx < allCells.length - 1) {
+          const nextCell = allCells[idx + 1];
+          activeTableCellRef.current = nextCell;
+          focusTableCell(nextCell);
+        } else {
+          // At the very last cell of the table: insert a new row below and focus its first cell (like Word)
+          activeTableCellRef.current = currentCell;
+          handleTableAction('row-below');
+          const updatedRows = Array.from(table.querySelectorAll('tr'));
+          const lastRowFirstCell = updatedRows[updatedRows.length - 1]?.querySelector('td, th') as HTMLTableCellElement | null;
+          if (lastRowFirstCell) {
+            activeTableCellRef.current = lastRowFirstCell;
+            focusTableCell(lastRowFirstCell);
+          }
+        }
+      }
+      return;
+    }
+
+    // Prevent Backspace / Delete from destroying table cell boundaries and scrambling columns
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      const range = quill.getSelection();
+      if (!range) return;
+      const [startLine, startOffset] = quill.getLine(range.index);
+      const [endLine] = quill.getLine(range.index + range.length);
+
+      if (range.length === 0 && startLine) {
+        if (e.key === 'Backspace' && startOffset === 0) {
+          e.preventDefault();
+          return;
+        }
+        if (e.key === 'Delete' && startOffset >= startLine.length() - 1) {
+          e.preventDefault();
+          return;
+        }
+      } else if (range.length > 0 && startLine !== endLine) {
+        // Selection spans across multiple cells: clear text cleanly without removing <td> elements
+        e.preventDefault();
+        ensureQuillTableStructure(table);
+        const domRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+        if (domRange) {
+          const allCells = Array.from(table.querySelectorAll('td, th')) as HTMLTableCellElement[];
+          allCells.forEach((td) => {
+            if (domRange.intersectsNode(td)) {
+              td.innerHTML = '<br>';
+            }
+          });
+          syncEditorHtml();
+          focusTableCell(currentCell);
+        }
+      }
     }
   };
 
   return (
-    <div className="rich-editor-wrapper" onClick={handleEditorClick}>
+    <div
+      className="rich-editor-wrapper"
+      onMouseDown={handleEditorMouseDown}
+      onKeyUp={() => checkTableContext()}
+      onKeyDown={handleEditorKeyDown}
+    >
       <CustomToolbar id={toolbarId} />
+      {isInsideTable && (
+        <div
+          className="quill-table-context-bar"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <span className="quill-table-bar-label">
+            <Table2 size={13} /> Table:
+          </span>
+          <button type="button" className="quill-table-bar-btn" onClick={() => handleTableAction('row-above')} title="Insert Row Above">
+            + Row Above
+          </button>
+          <button type="button" className="quill-table-bar-btn" onClick={() => handleTableAction('row-below')} title="Insert Row Below">
+            + Row Below
+          </button>
+          <span className="quill-table-bar-sep" />
+          <button type="button" className="quill-table-bar-btn" onClick={() => handleTableAction('col-left')} title="Insert Column Left">
+            + Col Left
+          </button>
+          <button type="button" className="quill-table-bar-btn" onClick={() => handleTableAction('col-right')} title="Insert Column Right">
+            + Col Right
+          </button>
+          <span className="quill-table-bar-sep" />
+          <button type="button" className="quill-table-bar-btn danger" onClick={() => handleTableAction('del-row')} title="Delete Current Row">
+            Delete Row
+          </button>
+          <button type="button" className="quill-table-bar-btn danger" onClick={() => handleTableAction('del-col')} title="Delete Current Column">
+            Delete Col
+          </button>
+          <button type="button" className="quill-table-bar-btn danger" onClick={() => handleTableAction('del-table')} title="Delete Entire Table">
+            Delete Table
+          </button>
+        </div>
+      )}
       <ReactQuill
         ref={quillRef}
         theme="snow"
         value={value}
         onChange={onChange}
+        onChangeSelection={(range) => {
+          if (range) {
+            lastSelectionRef.current = { index: range.index, length: range.length };
+            checkTableContext();
+          }
+        }}
+        useSemanticHTML={false}
         modules={modules}
         placeholder={placeholder}
         style={{ background: 'white', borderRadius: '0 0 var(--radius-md) var(--radius-md)' }}
       />
 
       {showTableDialog && (
-        <div className="modal-overlay" style={{ zIndex: 12000 }} onClick={() => setShowTableDialog(false)}>
+        <div className="modal-overlay" style={{ zIndex: 12000 }}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
             <div className="modal-header">
               <h2 className="modal-title">Insert Table</h2>
@@ -821,6 +1214,7 @@ export default function Editor() {
 
   const [editingImage, setEditingImage] = useState<{
     imgElement: HTMLImageElement;
+    imgIndex: number;
     originalHtml: string;
     originalWidth: number;
     contextSelector: string;
@@ -828,10 +1222,44 @@ export default function Editor() {
   } | null>(null);
   const [imageOverlayRect, setImageOverlayRect] = useState<{ top: number; left: number; width: number; height: number; clipTop: number; clipBottom: number; clipLeft: number; clipRight: number } | null>(null);
   const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const dragImageRef = useRef<{ startX: number; startY: number; startMarginLeft: number; startMarginTop: number; moved: boolean } | null>(null);
   const [showCropModal, setShowCropModal] = useState(false);
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const imgRef = useRef<HTMLImageElement>(null);
+
+  const syncImgAttributesToDoc = useCallback((sourceImg: HTMLImageElement, targetImg: HTMLImageElement, newSrc?: string, overrideWidth?: number) => {
+    if (newSrc && typeof newSrc === 'string') {
+      targetImg.src = newSrc;
+      targetImg.setAttribute('src', newSrc);
+    }
+    const widthVal = overrideWidth !== undefined ? overrideWidth : Math.round(sourceImg.getBoundingClientRect().width);
+    if (widthVal > 0) {
+      targetImg.style.width = `${widthVal}px`;
+      targetImg.setAttribute('width', `${widthVal}`);
+    }
+    targetImg.style.height = 'auto';
+    targetImg.removeAttribute('height');
+    targetImg.style.outline = '';
+
+    if (sourceImg.style.display) targetImg.style.display = sourceImg.style.display;
+    if (sourceImg.style.marginLeft) targetImg.style.marginLeft = sourceImg.style.marginLeft;
+    else targetImg.style.removeProperty('margin-left');
+    if (sourceImg.style.marginRight) targetImg.style.marginRight = sourceImg.style.marginRight;
+    else targetImg.style.removeProperty('margin-right');
+    if (sourceImg.style.marginTop) targetImg.style.marginTop = sourceImg.style.marginTop;
+    else targetImg.style.removeProperty('margin-top');
+
+    const dataX = sourceImg.getAttribute('data-x');
+    const dataY = sourceImg.getAttribute('data-y');
+    const dataAlign = sourceImg.getAttribute('data-align');
+    if (dataX !== null) targetImg.setAttribute('data-x', dataX);
+    else targetImg.removeAttribute('data-x');
+    if (dataY !== null) targetImg.setAttribute('data-y', dataY);
+    else targetImg.removeAttribute('data-y');
+    if (dataAlign !== null) targetImg.setAttribute('data-align', dataAlign);
+    else targetImg.removeAttribute('data-align');
+  }, []);
 
   // Update overlay rect when editingImage changes or on scroll/resize
   useEffect(() => {
@@ -842,22 +1270,20 @@ export default function Editor() {
       // React re-renders (like FullQuill recreating or dangerouslySetInnerHTML refreshing) 
       // can cause the img element to detach. Reconnect it!
       if (!document.body.contains(el)) {
-        const candidates = Array.from(document.querySelectorAll(`${editingImage.contextSelector} img[src="${el.src}"]`)) as HTMLImageElement[];
-        const newEl = candidates.find(c => !c.closest('.measurement-container'));
+        const candidates = Array.from(document.querySelectorAll(`${editingImage.contextSelector} img`)) as HTMLImageElement[];
+        const validCandidates = candidates.filter(c => !c.closest('.measurement-container') && !c.closest('.paper-header'));
+        const newEl = validCandidates.find(c => c.src === el.src) || validCandidates[editingImage.imgIndex];
 
         if (newEl) {
           el = newEl;
-          // Update the state reference so handleMouseMove gets the right element too
           editingImage.imgElement = el;
         } else {
-          // Image was permanently removed from DOM
           setImageOverlayRect(null);
           setEditingImage(null);
           return;
         }
       }
 
-      // Do NOT set outline directly on the DOM node to avoid it serializing into HTML
       if (el.style.outline) {
         el.style.outline = '';
       }
@@ -874,7 +1300,6 @@ export default function Editor() {
         clipRight = pRect.right;
       }
 
-      // Safety check: if width/height are 0, it means it's hidden or not rendered
       if (rect.width === 0 || rect.height === 0) {
         setImageOverlayRect(null);
         return;
@@ -894,15 +1319,12 @@ export default function Editor() {
     };
   }, [editingImage]);
 
-  // Commit image resize immediately to Quill and React state (e.g. draftContent)
-  const commitImageResize = useCallback((newWidth: number) => {
+  // Commit image transform (resize, drag move, alignment) immediately to Quill and React state
+  const commitImageTransform = useCallback((overrideWidth?: number) => {
     if (!editingImage) return;
     const imgEl = editingImage.imgElement;
-    imgEl.style.width = `${newWidth}px`;
-    imgEl.style.height = 'auto';
-    imgEl.setAttribute('width', `${newWidth}`);
-    imgEl.removeAttribute('height');
-    imgEl.style.outline = '';
+    const widthVal = overrideWidth !== undefined ? overrideWidth : Math.round(imgEl.getBoundingClientRect().width);
+    syncImgAttributesToDoc(imgEl, imgEl, undefined, widthVal);
 
     const qlEditor = imgEl.closest('.ql-editor');
     let updatedHtml = '';
@@ -911,27 +1333,27 @@ export default function Editor() {
     } else {
       const parser = new DOMParser();
       const doc = parser.parseFromString(editingImage.originalHtml, 'text/html');
-      const imgs = doc.querySelectorAll('img');
+      const imgs = Array.from(doc.querySelectorAll('img'));
       const targetSrc = imgEl.getAttribute('src');
-      imgs.forEach(img => {
-        if (img.getAttribute('src') === targetSrc || img.src === imgEl.src) {
-          img.style.width = `${newWidth}px`;
-          img.style.height = 'auto';
-          img.setAttribute('width', `${newWidth}`);
-          img.removeAttribute('height');
-          img.style.outline = '';
-        }
-      });
+      const matchedByIdx = imgs[editingImage.imgIndex];
+      if (matchedByIdx) {
+        syncImgAttributesToDoc(imgEl, matchedByIdx, undefined, widthVal);
+      } else {
+        imgs.forEach(img => {
+          if (img.getAttribute('src') === targetSrc || img.src === imgEl.src) {
+            syncImgAttributesToDoc(imgEl, img, undefined, widthVal);
+          }
+        });
+      }
       updatedHtml = cleanImageHtml(doc.body.innerHTML);
     }
 
-    // Call onApply so React state updates immediately without needing to add a sentence!
-    editingImage.onApply(updatedHtml);
+    void editingImage.onApply(updatedHtml);
 
     setEditingImage(prev => prev ? {
       ...prev,
       originalHtml: updatedHtml,
-      originalWidth: newWidth,
+      originalWidth: widthVal,
     } : null);
 
     const rect = imgEl.getBoundingClientRect();
@@ -942,39 +1364,82 @@ export default function Editor() {
       width: rect.width,
       height: rect.height,
     } : null);
-  }, [editingImage]);
+  }, [editingImage, syncImgAttributesToDoc]);
 
-  const commitImageResizeRef = useRef(commitImageResize);
+  const commitImageTransformRef = useRef(commitImageTransform);
   useEffect(() => {
-    commitImageResizeRef.current = commitImageResize;
+    commitImageTransformRef.current = commitImageTransform;
   });
 
-  // Global mouse handlers for corner drag resize
+  // Global mouse handlers for corner drag resize & image drag-to-move
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!resizeRef.current || !editingImage || !imageOverlayRect) return;
-      e.preventDefault();
-      const delta = e.clientX - resizeRef.current.startX;
-      let newWidth = Math.max(30, resizeRef.current.startWidth + delta);
-      // Clamp to parent container width
-      const parent = editingImage.imgElement.parentElement;
-      if (parent) {
-        const parentWidth = parent.getBoundingClientRect().width;
-        newWidth = Math.min(newWidth, parentWidth);
+      if (!editingImage || !imageOverlayRect) return;
+
+      if (resizeRef.current) {
+        e.preventDefault();
+        const delta = e.clientX - resizeRef.current.startX;
+        let newWidth = Math.max(30, resizeRef.current.startWidth + delta);
+        const parent = editingImage.imgElement.parentElement;
+        if (parent) {
+          const parentWidth = parent.getBoundingClientRect().width;
+          newWidth = Math.min(newWidth, parentWidth);
+        }
+        editingImage.imgElement.style.width = `${newWidth}px`;
+        editingImage.imgElement.style.height = 'auto';
+        const rect = editingImage.imgElement.getBoundingClientRect();
+        setImageOverlayRect({
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+          clipTop: imageOverlayRect.clipTop,
+          clipBottom: imageOverlayRect.clipBottom,
+          clipLeft: imageOverlayRect.clipLeft,
+          clipRight: imageOverlayRect.clipRight
+        });
+        return;
       }
-      editingImage.imgElement.style.width = `${newWidth}px`;
-      editingImage.imgElement.style.height = 'auto';
-      const rect = editingImage.imgElement.getBoundingClientRect();
-      setImageOverlayRect({
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-        clipTop: imageOverlayRect.clipTop,
-        clipBottom: imageOverlayRect.clipBottom,
-        clipLeft: imageOverlayRect.clipLeft,
-        clipRight: imageOverlayRect.clipRight
-      });
+
+      if (dragImageRef.current) {
+        const deltaX = e.clientX - dragImageRef.current.startX;
+        const deltaY = e.clientY - dragImageRef.current.startY;
+        if (!dragImageRef.current.moved && Math.abs(deltaX) < 3 && Math.abs(deltaY) < 3) {
+          return;
+        }
+        e.preventDefault();
+        dragImageRef.current.moved = true;
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+
+        const imgEl = editingImage.imgElement;
+        const container = (imgEl.closest('.ql-editor, .q-text, .q-option, .section-description-text, .paper-instructions-body') || imgEl.parentElement) as HTMLElement | null;
+        const imgRect = imgEl.getBoundingClientRect();
+        const maxLeft = container ? Math.max(0, container.getBoundingClientRect().width - imgRect.width) : 600;
+
+        const newMarginLeft = Math.max(0, Math.min(Math.round(maxLeft), Math.round(dragImageRef.current.startMarginLeft + deltaX)));
+        const newMarginTop = Math.max(-20, Math.min(300, Math.round(dragImageRef.current.startMarginTop + deltaY)));
+
+        imgEl.style.display = 'block';
+        imgEl.style.marginLeft = `${newMarginLeft}px`;
+        imgEl.style.marginRight = 'auto';
+        imgEl.style.marginTop = `${newMarginTop}px`;
+        imgEl.setAttribute('data-x', String(newMarginLeft));
+        imgEl.setAttribute('data-y', String(newMarginTop));
+        imgEl.removeAttribute('data-align');
+
+        const rect = imgEl.getBoundingClientRect();
+        setImageOverlayRect({
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+          clipTop: imageOverlayRect.clipTop,
+          clipBottom: imageOverlayRect.clipBottom,
+          clipLeft: imageOverlayRect.clipLeft,
+          clipRight: imageOverlayRect.clipRight
+        });
+      }
     };
 
     const handleMouseUp = () => {
@@ -982,7 +1447,14 @@ export default function Editor() {
         resizeRef.current = null;
         if (editingImage?.imgElement) {
           const finalWidth = Math.round(editingImage.imgElement.getBoundingClientRect().width);
-          commitImageResizeRef.current(finalWidth);
+          commitImageTransformRef.current(finalWidth);
+        }
+      }
+      if (dragImageRef.current) {
+        const wasMoved = dragImageRef.current.moved;
+        dragImageRef.current = null;
+        if (wasMoved && editingImage?.imgElement) {
+          commitImageTransformRef.current();
         }
       }
       document.body.style.cursor = '';
@@ -1003,20 +1475,59 @@ export default function Editor() {
     document.body.style.userSelect = 'none';
   };
 
+  const getImgCurrentOffsets = (imgEl: HTMLImageElement) => {
+    const container = (imgEl.closest('.ql-editor, .q-text, .q-option, .section-description-text, .paper-instructions-body') || imgEl.parentElement) as HTMLElement | null;
+    let startMarginLeft = parseInt(imgEl.style.marginLeft || imgEl.getAttribute('data-x') || '0', 10);
+    if (isNaN(startMarginLeft) || imgEl.style.marginLeft === 'auto') {
+      if (container) {
+        startMarginLeft = Math.max(0, Math.round(imgEl.getBoundingClientRect().left - container.getBoundingClientRect().left));
+      } else {
+        startMarginLeft = 0;
+      }
+    }
+    const startMarginTop = parseInt(imgEl.style.marginTop || imgEl.getAttribute('data-y') || '0', 10) || 0;
+    return { startMarginLeft, startMarginTop };
+  };
+
+  const startImageDrag = (e: React.MouseEvent, targetImg?: HTMLImageElement) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const imgEl = targetImg || editingImage?.imgElement;
+    if (!imgEl) return;
+    const { startMarginLeft, startMarginTop } = getImgCurrentOffsets(imgEl);
+    dragImageRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startMarginLeft,
+      startMarginTop,
+      moved: false,
+    };
+  };
+
+  const alignSelectedImage = (alignment: 'left' | 'center' | 'right') => {
+    if (!editingImage) return;
+    const imgEl = editingImage.imgElement;
+    imgEl.style.display = 'block';
+    imgEl.removeAttribute('data-x');
+    imgEl.setAttribute('data-align', alignment);
+    if (alignment === 'left') {
+      imgEl.style.marginLeft = '0px';
+      imgEl.style.marginRight = 'auto';
+    } else if (alignment === 'center') {
+      imgEl.style.marginLeft = 'auto';
+      imgEl.style.marginRight = 'auto';
+    } else {
+      imgEl.style.marginLeft = 'auto';
+      imgEl.style.marginRight = '0px';
+    }
+    commitImageTransform();
+  };
+
   const applyImageEdit = useCallback(async (newSrc?: string, newWidth?: number) => {
     if (!editingImage) return;
     const currentWidth = newWidth !== undefined ? Math.round(newWidth) : Math.round(editingImage.imgElement.getBoundingClientRect().width);
     const imgEl = editingImage.imgElement;
-    imgEl.style.outline = '';
-
-    if (newSrc && typeof newSrc === 'string') {
-      imgEl.src = newSrc;
-      imgEl.setAttribute('src', newSrc);
-    }
-    imgEl.style.width = `${currentWidth}px`;
-    imgEl.style.height = 'auto';
-    imgEl.setAttribute('width', `${currentWidth}`);
-    imgEl.removeAttribute('height');
+    syncImgAttributesToDoc(imgEl, imgEl, newSrc, currentWidth);
 
     const qlEditor = imgEl.closest('.ql-editor');
     let finalHtml = '';
@@ -1025,25 +1536,25 @@ export default function Editor() {
     } else {
       const parser = new DOMParser();
       const doc = parser.parseFromString(editingImage.originalHtml, 'text/html');
-      const imgs = doc.querySelectorAll('img');
+      const imgs = Array.from(doc.querySelectorAll('img'));
       const targetSrc = imgEl.getAttribute('src');
+      const matchedByIdx = imgs[editingImage.imgIndex];
 
-      imgs.forEach(img => {
-        if (img.getAttribute('src') === targetSrc || img.src === imgEl.src) {
-          if (newSrc && typeof newSrc === 'string') img.src = newSrc;
-          img.style.width = `${currentWidth}px`;
-          img.style.height = 'auto';
-          img.setAttribute('width', `${currentWidth}`);
-          img.removeAttribute('height');
-          img.style.outline = '';
-        }
-      });
+      if (matchedByIdx) {
+        syncImgAttributesToDoc(imgEl, matchedByIdx, newSrc, currentWidth);
+      } else {
+        imgs.forEach(img => {
+          if (img.getAttribute('src') === targetSrc || img.src === imgEl.src) {
+            syncImgAttributesToDoc(imgEl, img, newSrc, currentWidth);
+          }
+        });
+      }
       finalHtml = cleanImageHtml(doc.body.innerHTML);
     }
 
     await editingImage.onApply(finalHtml);
     setEditingImage(null);
-  }, [editingImage]);
+  }, [editingImage, syncImgAttributesToDoc]);
 
   // Click outside to apply edit and dismiss selection overlay
   useEffect(() => {
@@ -1054,25 +1565,134 @@ export default function Editor() {
         target !== editingImage.imgElement &&
         !target.closest('.rnd-handle') &&
         !target.closest('.crop-btn') &&
+        !target.closest('.image-overlay-toolbar') &&
+        !target.closest('.image-drag-surface') &&
         !target.closest('.modal-overlay') // Crop modal
       ) {
-        // Passively save and dismiss overlay
-        applyImageEdit();
+        void applyImageEdit();
       }
     };
     window.addEventListener('mousedown', handleOutsideClick);
     return () => window.removeEventListener('mousedown', handleOutsideClick);
   }, [editingImage, applyImageEdit]);
 
-  const handleQuillImageClick = useCallback((imgElement: HTMLImageElement, htmlValue: string, onChange: (newHtml: string) => void) => {
+  const handleQuillImageClick = useCallback((imgElement: HTMLImageElement, htmlValue: string, onChange: (newHtml: string) => void, startEvent?: React.MouseEvent) => {
+    const qlEditor = imgElement.closest('.ql-editor');
+    const allImgs = qlEditor ? Array.from(qlEditor.querySelectorAll('img')) : [imgElement];
+    const imgIndex = Math.max(0, allImgs.indexOf(imgElement));
     setEditingImage({
       imgElement,
+      imgIndex,
       originalHtml: htmlValue,
       originalWidth: imgElement.getBoundingClientRect().width,
       contextSelector: '.rich-editor-wrapper',
       onApply: (newHtml) => onChange(newHtml),
     });
+    if (startEvent) {
+      startImageDrag(startEvent, imgElement);
+    }
   }, []);
+
+  const handlePaperImageMouseDown = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName !== 'IMG') return;
+    if (target.closest('.paper-header') || target.closest('.measurement-container')) return;
+
+    const imgElement = target as HTMLImageElement;
+    if (imgElement.style.outline) {
+      imgElement.style.outline = '';
+    }
+
+    const optionEl = imgElement.closest('.q-option[data-option-index]') as HTMLElement | null;
+    const questionHolder = imgElement.closest('[data-question-id]') as HTMLElement | null;
+    const sectionDescEl = imgElement.closest('.section-description-text[data-section-name]') as HTMLElement | null;
+    const instructionsEl = imgElement.closest('.paper-instructions-body') as HTMLElement | null;
+
+    if (optionEl && questionHolder) {
+      const qId = questionHolder.getAttribute('data-question-id');
+      const optIdx = parseInt(optionEl.getAttribute('data-option-index') || '0', 10);
+      const q = questions.find(item => item.id === qId);
+      if (!q || !q.options) return;
+      const imgs = Array.from(optionEl.querySelectorAll('img'));
+      const imgIndex = Math.max(0, imgs.indexOf(imgElement));
+      setEditingImage({
+        imgElement,
+        imgIndex,
+        originalHtml: q.options[optIdx] || '',
+        originalWidth: imgElement.getBoundingClientRect().width,
+        contextSelector: `#printable-paper [data-question-id="${q.id}"] .q-option[data-option-index="${optIdx}"]`,
+        onApply: async (newHtml) => {
+          const latestQ = useStore.getState().questions.find(item => item.id === q.id) || q;
+          const nextOpts = [...(latestQ.options || [])];
+          nextOpts[optIdx] = newHtml;
+          await updateQuestion(q.id, { options: nextOpts });
+        },
+      });
+      startImageDrag(e, imgElement);
+      return;
+    }
+
+    if (questionHolder) {
+      const qId = questionHolder.getAttribute('data-question-id');
+      const q = questions.find(item => item.id === qId);
+      if (!q) return;
+      const textContainer = (imgElement.closest('.q-text') || questionHolder) as HTMLElement;
+      const imgs = Array.from(textContainer.querySelectorAll('img'));
+      const imgIndex = Math.max(0, imgs.indexOf(imgElement));
+      setEditingImage({
+        imgElement,
+        imgIndex,
+        originalHtml: q.content || '',
+        originalWidth: imgElement.getBoundingClientRect().width,
+        contextSelector: `#printable-paper [data-question-id="${q.id}"] .q-text`,
+        onApply: async (newHtml) => {
+          await updateQuestion(q.id, { content: newHtml });
+        },
+      });
+      startImageDrag(e, imgElement);
+      return;
+    }
+
+    if (sectionDescEl && paper) {
+      const secName = sectionDescEl.getAttribute('data-section-name') || '';
+      const imgs = Array.from(sectionDescEl.querySelectorAll('img'));
+      const imgIndex = Math.max(0, imgs.indexOf(imgElement));
+      const origDesc = paper.headerConfig?.sectionDescriptions?.[secName] || '';
+      setEditingImage({
+        imgElement,
+        imgIndex,
+        originalHtml: origDesc,
+        originalWidth: imgElement.getBoundingClientRect().width,
+        contextSelector: `#printable-paper .section-description-text[data-section-name="${secName}"]`,
+        onApply: async (newHtml) => {
+          await handleUpdateHeaderConfig({
+            sectionDescriptions: {
+              ...(paper.headerConfig?.sectionDescriptions || {}),
+              [secName]: newHtml,
+            },
+          });
+        },
+      });
+      startImageDrag(e, imgElement);
+      return;
+    }
+
+    if (instructionsEl && paper) {
+      const imgs = Array.from(instructionsEl.querySelectorAll('img'));
+      const imgIndex = Math.max(0, imgs.indexOf(imgElement));
+      setEditingImage({
+        imgElement,
+        imgIndex,
+        originalHtml: paper.instructions || '',
+        originalWidth: imgElement.getBoundingClientRect().width,
+        contextSelector: '#printable-paper .paper-instructions-body',
+        onApply: async (newHtml) => {
+          await updateQuestionPaper(paper.id, { instructions: newHtml });
+        },
+      });
+      startImageDrag(e, imgElement);
+    }
+  }, [questions, paper, updateQuestion, updateQuestionPaper]);
 
   // Track MathLive virtual keyboard visibility
   useEffect(() => {
@@ -1614,6 +2234,7 @@ export default function Editor() {
       setEditingPQId(null);
       setQParentId('');
       setActiveView('tree');
+      setIsConstructorOpen(false);
     } finally {
       setSaving(false);
     }
@@ -1642,6 +2263,96 @@ export default function Editor() {
       removeQuestionFromPaper(id, questionId);
       if (selectedPQId === _pqId) setSelectedPQId(null);
       showToastMessage('Question removed');
+    }
+  };
+
+  const handleCopyQuestion = async (pqId: string) => {
+    if (!id) return;
+    const targetPQ = paperQuestionsList.find(pq => pq.id === pqId);
+    if (!targetPQ) return;
+
+    const collectSubtreeIds = (rootId: string): string[] => {
+      const children = paperQuestionsList.filter(pq => pq.parentId === rootId);
+      const ids = [rootId];
+      for (const child of children) {
+        ids.push(...collectSubtreeIds(child.id));
+      }
+      return ids;
+    };
+
+    const originalSubtreeIds = collectSubtreeIds(pqId);
+    const createdPQIds: string[] = [];
+
+    const cloneNode = async (sourcePQ: PaperQuestion, newParentId?: string): Promise<string | null> => {
+      const sourceQ = questions.find(q => q.id === sourcePQ.questionId);
+      if (!sourceQ) return null;
+
+      const meta: QuestionMeta = {
+        courseId: sourceQ.courseId || paper?.courseId,
+        subjectId: sourceQ.subjectId || paper?.subjectId,
+        classId: sourceQ.classId || paper?.classId,
+        chapterId: sourcePQ.chapterId || sourceQ.chapterId,
+        topicId: sourcePQ.topicId || sourceQ.topicId,
+        categoryId: sourcePQ.categoryId || sourceQ.categoryId,
+        cognitiveLevel: sourcePQ.cognitiveLevel || sourceQ.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL,
+      };
+
+      const newPQId = await createAndAddQuestion(
+        id,
+        sourceQ.content,
+        sourceQ.questionType,
+        sourceQ.options && sourceQ.options.length > 0 ? [...sourceQ.options] : undefined,
+        sourcePQ.section,
+        newParentId,
+        sourcePQ.marks,
+        meta.courseId,
+        meta.subjectId,
+        meta.classId,
+        sourceQ.difficulty || 'medium',
+        undefined,
+        undefined,
+        sourceQ.typeHeader,
+        sourcePQ.isOptional || false,
+        undefined,
+        'ORIGINAL',
+        meta,
+        sourcePQ.subNumberingStyle || sourceQ.subNumberingStyle
+      );
+
+      if (newPQId) {
+        createdPQIds.push(newPQId);
+        const childPQs = paperQuestionsList.filter(pq => pq.parentId === sourcePQ.id);
+        for (const childPQ of childPQs) {
+          await cloneNode(childPQ, newPQId);
+        }
+      }
+      return newPQId;
+    };
+
+    await cloneNode(targetPQ, targetPQ.parentId || undefined);
+
+    if (createdPQIds.length > 0) {
+      const currentPaperPQs = [
+        ...(useStore.getState().paperQuestions.get(id) || []),
+      ];
+
+      const createdSet = new Set(createdPQIds);
+      const withoutCreated = currentPaperPQs.filter(pq => !createdSet.has(pq.id));
+      const createdNodes = createdPQIds
+        .map(cid => currentPaperPQs.find(pq => pq.id === cid))
+        .filter((pq): pq is PaperQuestion => Boolean(pq));
+
+      const lastOrigId = originalSubtreeIds[originalSubtreeIds.length - 1];
+      const insertAfterIdx = withoutCreated.findIndex(pq => pq.id === lastOrigId);
+      if (insertAfterIdx !== -1) {
+        const reordered = [
+          ...withoutCreated.slice(0, insertAfterIdx + 1),
+          ...createdNodes,
+          ...withoutCreated.slice(insertAfterIdx + 1),
+        ];
+        await reorderPaperQuestions(id, reordered);
+      }
+      showToastMessage('Question copied!');
     }
   };
 
@@ -2149,8 +2860,10 @@ export default function Editor() {
           onSelect={() => { setSelectedPQId(pq.id); setDraftType(null); }}
           onRemove={() => handleRemovePQ(pq.id, pq.questionId)}
           onEdit={() => { handleEditQuestion(pq.id); setIsConstructorOpen(true); setActiveView('add-question'); }}
+          onCopy={() => { void handleCopyQuestion(pq.id); }}
           subQuestions={subs}
           onEditSubQuestion={(pqId) => { handleEditQuestion(pqId); setIsConstructorOpen(true); setActiveView('add-question'); }}
+          onCopySubQuestion={(pqId) => { void handleCopyQuestion(pqId); }}
           onRemoveSubQuestion={(pqId, qId) => handleRemovePQ(pqId, qId)}
           onMoveSubQuestionUp={(pqId) => handleMoveSubQuestion(pqId, 'up')}
           onMoveSubQuestionDown={(pqId) => handleMoveSubQuestion(pqId, 'down')}
@@ -2305,10 +3018,13 @@ export default function Editor() {
           >
             <Settings size={14} /> Paper Settings
           </button>
-          <button className="toolbar-btn-accent" onClick={() => { setIsConstructorOpen(true); setActiveView('tree'); }}>
+          <button
+            className={`toolbar-btn-outlined ${isConstructorOpen ? 'active' : ''}`}
+            onClick={() => { setIsConstructorOpen(true); setActiveView('tree'); }}
+          >
             <Layers size={14} /> Edit/View Questions
           </button>
-          <button className="toolbar-btn-accent" onClick={exportPDF} disabled={isExporting} title="Export as PDF">
+          <button className="toolbar-btn-outlined" onClick={exportPDF} disabled={isExporting} title="Export as PDF">
             {isExporting ? <Loader2 size={14} className="spin" /> : <Printer size={14} />}
             {isExporting ? 'Generating...' : 'Export PDF'}
           </button>
@@ -2567,6 +3283,7 @@ export default function Editor() {
           className="paper-container" 
           ref={paperRef} 
           id="printable-paper"
+          onMouseDown={handlePaperImageMouseDown}
           style={{
             fontSize: paper.headerConfig?.fontSize ? `${paper.headerConfig.fontSize}px` : undefined,
             fontFamily: paper.headerConfig?.fontFamily ? paper.headerConfig.fontFamily : undefined,
@@ -2649,130 +3366,185 @@ export default function Editor() {
           )}
           <div className="print-footer">Created using QuestForma</div>
           <div className="print-spacer" />
+        </div>
 
-          {/* Inline image resize handles */}
-          {editingImage && imageOverlayRect && (
-            <>
-              {/* Selection Border Box (rendered as an overlay, NEVER touching the editor DOM) */}
-              <div
+        {/* Inline image drag, alignment, resize & crop overlay (outside printable-paper so it works on paper & in modals without printing) */}
+        {editingImage && imageOverlayRect && (
+          <div className="hide-on-print">
+            {/* Draggable Selection Surface & Border Box */}
+            <div
+              className="image-drag-surface"
+              onMouseDown={(e) => startImageDrag(e)}
+              title="Drag to move image"
+              style={{
+                position: 'fixed',
+                top: imageOverlayRect.top,
+                left: imageOverlayRect.left,
+                width: imageOverlayRect.width,
+                height: imageOverlayRect.height,
+                border: '2px solid var(--accent, #f97316)',
+                cursor: 'grab',
+                zIndex: 11200,
+                boxSizing: 'border-box',
+                borderRadius: 2,
+                opacity: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 0 : 1,
+                pointerEvents: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 'none' : 'auto',
+              }}
+            />
+
+            {/* Corner resize handles */}
+            {['nw', 'ne', 'sw', 'se'].map(corner => {
+              const isRight = corner.includes('e');
+              const isBottom = corner.includes('s');
+              const top = isBottom ? imageOverlayRect.top + imageOverlayRect.height - 5 : imageOverlayRect.top - 5;
+              const left = isRight ? imageOverlayRect.left + imageOverlayRect.width - 5 : imageOverlayRect.left - 5;
+
+              if (top < imageOverlayRect.clipTop || top > imageOverlayRect.clipBottom || left < imageOverlayRect.clipLeft || left > imageOverlayRect.clipRight) {
+                return null;
+              }
+
+              return (
+                <div
+                  key={corner}
+                  className="rnd-handle"
+                  onMouseDown={startResize}
+                  style={{
+                    position: 'fixed',
+                    top,
+                    left,
+                    width: 11,
+                    height: 11,
+                    background: 'var(--accent, #f97316)',
+                    border: '2px solid white',
+                    borderRadius: 2,
+                    cursor: (corner === 'nw' || corner === 'se') ? 'nwse-resize' : 'nesw-resize',
+                    zIndex: 11202,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                  }}
+                />
+              );
+            })}
+
+            {/* Floating Image Action Toolbar (Drag handle, Left/Center/Right align, Crop) */}
+            <div
+              className="image-overlay-toolbar crop-btn"
+              style={{
+                position: 'fixed',
+                top: Math.max(imageOverlayRect.clipTop + 6, imageOverlayRect.top - 34 < imageOverlayRect.clipTop ? imageOverlayRect.top + 6 : imageOverlayRect.top - 34),
+                left: Math.max(imageOverlayRect.clipLeft + 6, Math.min(imageOverlayRect.clipRight - 220, imageOverlayRect.left)),
+                background: 'white',
+                border: '1px solid #cbd5e1',
+                borderRadius: 6,
+                padding: '3px 6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                zIndex: 11203,
+                opacity: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 0 : 1,
+                pointerEvents: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 'none' : 'auto',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span
+                onMouseDown={(e) => startImageDrag(e)}
+                title="Drag to reposition image"
                 style={{
-                  position: 'fixed',
-                  top: imageOverlayRect.top,
-                  left: imageOverlayRect.left,
-                  width: imageOverlayRect.width,
-                  height: imageOverlayRect.height,
-                  border: '2px solid var(--accent, #f97316)',
-                  pointerEvents: 'none',
-                  zIndex: 1000,
-                  boxSizing: 'border-box',
-                  borderRadius: 2,
-                  opacity: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 0 : 1,
-                }}
-              />
-
-              {/* Corner handles */}
-              {['nw', 'ne', 'sw', 'se'].map(corner => {
-                const isRight = corner.includes('e');
-                const isBottom = corner.includes('s');
-                const top = isBottom ? imageOverlayRect.top + imageOverlayRect.height - 5 : imageOverlayRect.top - 5;
-                const left = isRight ? imageOverlayRect.left + imageOverlayRect.width - 5 : imageOverlayRect.left - 5;
-
-                // Don't render handle if it's outside the scroll container's bounds
-                if (top < imageOverlayRect.clipTop || top > imageOverlayRect.clipBottom || left < imageOverlayRect.clipLeft || left > imageOverlayRect.clipRight) {
-                  return null;
-                }
-
-                return (
-                  <div
-                    key={corner}
-                    onMouseDown={startResize}
-                    style={{
-                      position: 'fixed',
-                      top,
-                      left,
-                      width: 10,
-                      height: 10,
-                      background: 'var(--accent)',
-                      border: '2px solid white',
-                      borderRadius: 2,
-                      cursor: (corner === 'nw' || corner === 'se') ? 'nwse-resize' : 'nesw-resize',
-                      zIndex: 1001,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                    }}
-                  />
-                );
-              })}
-
-              {/* Inline crop button top right of the image */}
-              <button
-                className="crop-btn"
-                style={{
-                  position: 'fixed',
-                  top: Math.max(imageOverlayRect.clipTop + 8, imageOverlayRect.top + 8),
-                  left: Math.min(imageOverlayRect.clipRight - 65, imageOverlayRect.left + imageOverlayRect.width - 65), // ~65px width
-                  background: 'white',
-                  border: '1px solid #e5e7eb',
-                  cursor: 'pointer',
-                  color: '#6B7280',
-                  fontSize: 12,
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  display: 'flex',
+                  display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 4,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                  zIndex: 1001,
-                  opacity: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 0 : 1,
-                  pointerEvents: (imageOverlayRect.top > imageOverlayRect.clipBottom || imageOverlayRect.top + imageOverlayRect.height < imageOverlayRect.clipTop) ? 'none' : 'auto'
+                  gap: 3,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: '#334155',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background: '#f1f5f9',
+                  cursor: 'grab',
+                  userSelect: 'none',
                 }}
+              >
+                <Move size={12} /> Drag
+              </span>
+              <button
+                type="button"
+                onClick={() => alignSelectedImage('left')}
+                title="Align Image Left"
+                style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'transparent', color: '#475569', border: '1px solid #e2e8f0' }}
+              >
+                Left
+              </button>
+              <button
+                type="button"
+                onClick={() => alignSelectedImage('center')}
+                title="Center Image"
+                style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'transparent', color: '#475569', border: '1px solid #e2e8f0' }}
+              >
+                Center
+              </button>
+              <button
+                type="button"
+                onClick={() => alignSelectedImage('right')}
+                title="Align Image Right"
+                style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'transparent', color: '#475569', border: '1px solid #e2e8f0' }}
+              >
+                Right
+              </button>
+              <button
+                type="button"
                 onClick={(e) => { e.stopPropagation(); setShowCropModal(true); }}
                 title="Crop Image"
+                style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa' }}
               >
                 ✂ Crop
               </button>
-            </>
-          )}
+            </div>
+          </div>
+        )}
 
-          {/* Crop modal — only shown when user clicks Crop */}
-          {showCropModal && editingImage && (
-            <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={() => setShowCropModal(false)}>
-              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600, padding: 16 }}>
-                <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>Crop Image</h3>
-                <div style={{ maxHeight: '65vh', overflow: 'auto', background: '#f9fafb', borderRadius: 8, display: 'flex', justifyContent: 'center' }}>
-                  <ReactCrop
-                    crop={crop}
-                    onChange={(c) => setCrop(c)}
-                    onComplete={(c) => setCompletedCrop(c)}
-                  >
-                    <img
-                      ref={imgRef}
-                      src={editingImage.imgElement.src}
-                      alt="Crop preview"
-                      style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}
-                    />
-                  </ReactCrop>
-                </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-                  <button className="btn btn-secondary" onClick={() => { setShowCropModal(false); setCrop(undefined); setCompletedCrop(undefined); }}>Cancel</button>
-                  <button className="btn btn-primary" onClick={async () => {
-                    if (completedCrop && completedCrop.width > 0 && completedCrop.height > 0 && imgRef.current) {
-                      const croppedSrc = await getCroppedImg(imgRef.current, completedCrop);
-                      await applyImageEdit(croppedSrc, completedCrop.width);
-                    }
-                    setShowCropModal(false);
-                    setCrop(undefined);
-                    setCompletedCrop(undefined);
-                  }}>Apply Crop</button>
-                </div>
+        {/* Crop modal — only shown when user clicks Crop */}
+        {showCropModal && editingImage && (
+          <div className="modal-overlay" style={{ zIndex: 13000 }}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Crop Image</h3>
+                <button className="modal-close-btn" onClick={() => { setShowCropModal(false); setCrop(undefined); setCompletedCrop(undefined); }} title="Close">
+                  <X size={18} />
+                </button>
+              </div>
+              <div style={{ maxHeight: '65vh', overflow: 'auto', background: '#f9fafb', borderRadius: 8, display: 'flex', justifyContent: 'center' }}>
+                <ReactCrop
+                  crop={crop}
+                  onChange={(c) => setCrop(c)}
+                  onComplete={(c) => setCompletedCrop(c)}
+                >
+                  <img
+                    ref={imgRef}
+                    src={editingImage.imgElement.src}
+                    alt="Crop preview"
+                    style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}
+                  />
+                </ReactCrop>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                <button className="btn btn-secondary" onClick={() => { setShowCropModal(false); setCrop(undefined); setCompletedCrop(undefined); }}>Cancel</button>
+                <button className="btn btn-primary" onClick={async () => {
+                  if (completedCrop && completedCrop.width > 0 && completedCrop.height > 0 && imgRef.current) {
+                    const croppedSrc = await getCroppedImg(imgRef.current, completedCrop);
+                    await applyImageEdit(croppedSrc, completedCrop.width);
+                  }
+                  setShowCropModal(false);
+                  setCrop(undefined);
+                  setCompletedCrop(undefined);
+                }}>Apply Crop</button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* CREATOR HUB MODAL */}
       {showCreatorHub && (
-        <div className="modal-overlay" onClick={() => setShowCreatorHub(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
             <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="modal-title">Add Question</h2>
@@ -2850,7 +3622,7 @@ export default function Editor() {
 
       {/* TEST PAPER CONSTRUCTOR MODAL */}
       {isConstructorOpen && (
-        <div className="modal-overlay" onClick={() => { setIsConstructorOpen(false); handleCancelDraft(); }}>
+        <div className="modal-overlay">
           <div className="modal question-editor-modal" style={{ maxWidth: '780px', height: '85vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div>
@@ -3042,6 +3814,9 @@ export default function Editor() {
                                         <div className="tree-act-divider" />
                                         <button className="tree-act-icon" onClick={() => { handleEditQuestion(node.id); setActiveView('add-question'); }} title="Edit">
                                           <Pencil size={13} />
+                                        </button>
+                                        <button className="tree-act-icon" onClick={() => { void handleCopyQuestion(node.id); }} title="Copy">
+                                          <Copy size={13} />
                                         </button>
                                         <button className="tree-act-icon danger" onClick={() => handleRemovePQ(node.id, node.questionId)} title="Delete">
                                           <Trash2 size={13} />
@@ -4159,31 +4934,39 @@ export default function Editor() {
             zIndex: 10000,
             ...(mathKeyboardVisible ? { alignItems: 'flex-start', paddingTop: '8vh' } : {})
           }}
-          onClick={() => {
-            if (window.mathVirtualKeyboard) window.mathVirtualKeyboard.hide();
-            setShowMathDialog(false);
-          }}
         >
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 700, zIndex: 10001 }}>
             <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="modal-title">Insert Math Formula</h2>
-              <button
-                className="btn btn-secondary"
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px' }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (window.mathVirtualKeyboard) {
-                    if (window.mathVirtualKeyboard.visible) {
-                      window.mathVirtualKeyboard.hide();
-                    } else {
-                      window.mathVirtualKeyboard.show();
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.mathVirtualKeyboard) {
+                      if (window.mathVirtualKeyboard.visible) {
+                        window.mathVirtualKeyboard.hide();
+                      } else {
+                        window.mathVirtualKeyboard.show();
+                      }
                     }
-                  }
-                }}
-                title="Toggle Virtual Keyboard"
-              >
-                <Keyboard size={14} /> {mathKeyboardVisible ? 'Hide Keyboard' : 'Keyboard'}
-              </button>
+                  }}
+                  title="Toggle Virtual Keyboard"
+                >
+                  <Keyboard size={14} /> {mathKeyboardVisible ? 'Hide Keyboard' : 'Keyboard'}
+                </button>
+                <button
+                  className="modal-close-btn"
+                  onClick={() => {
+                    if (window.mathVirtualKeyboard) window.mathVirtualKeyboard.hide();
+                    setShowMathDialog(false);
+                  }}
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
             <div className="modal-content">
               <div className="property-field">

@@ -53,16 +53,6 @@ function SubquestionsModal({
   const allSelected = subqs.length > 0 && selectedSubqIds.size === subqs.length;
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  useEffect(() => {
     const timer = setTimeout(() => {
       renderMath();
     }, 60);
@@ -117,7 +107,7 @@ function SubquestionsModal({
   if (typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="modal-overlay" style={{ zIndex: 11500 }} onClick={onClose}>
+    <div className="modal-overlay" style={{ zIndex: 11500 }}>
       <div
         className="modal"
         onClick={(e) => e.stopPropagation()}
@@ -379,10 +369,100 @@ export default function QuestionBankSidebar({
       });
   }, [myQuestions, subQuestionIdSet, parentQuestionSubqsMap]);
 
-  // Shared questions: only parent questions
+  // Shared questions: only parent questions, enriched with subquestions (same as My Questions)
   const parentSharedQuestions = useMemo(() => {
-    return sharedQuestions.filter((q) => !q.parentId);
-  }, [sharedQuestions]);
+    const normalizeText = (html: string) => stripHtml(html).replace(/\s+/g, ' ').trim().toLowerCase();
+
+    // Map normalized content of known child subquestions so they don't appear as standalone top-level shared questions
+    const childSubqNormSet = new Set<string>();
+    const parentSubqsByNormContent = new Map<string, BankSubQuestion[]>();
+    const parentSubqsBySharedId = new Map<string, BankSubQuestion[]>();
+
+    allPQs.forEach((parentPq) => {
+      if (!parentPq.parentId) {
+        const subqs = parentQuestionSubqsMap.get(parentPq.questionId);
+        if (subqs && subqs.length > 0) {
+          if (parentPq.parentSharedId) {
+            parentSubqsBySharedId.set(parentPq.parentSharedId, subqs);
+          }
+          const pqQuestion = myQuestions.find((mq) => mq.id === parentPq.questionId);
+          if (pqQuestion) {
+            const norm = normalizeText(pqQuestion.content);
+            if (norm) parentSubqsByNormContent.set(norm, subqs);
+          }
+          subqs.forEach((sq) => {
+            const sqNorm = normalizeText(sq.content);
+            if (sqNorm) childSubqNormSet.add(sqNorm);
+          });
+        }
+      }
+    });
+
+    myQuestions.forEach((mq) => {
+      if (mq.subquestions && mq.subquestions.length > 0) {
+        const norm = normalizeText(mq.content);
+        if (norm && !parentSubqsByNormContent.has(norm)) {
+          parentSubqsByNormContent.set(norm, mq.subquestions);
+        }
+        mq.subquestions.forEach((sq) => {
+          const sqNorm = normalizeText(sq.content);
+          if (sqNorm) childSubqNormSet.add(sqNorm);
+        });
+      }
+    });
+
+    sharedQuestions.forEach((sq) => {
+      if (sq.subquestions && sq.subquestions.length > 0) {
+        sq.subquestions.forEach((child) => {
+          const childNorm = normalizeText(child.content);
+          if (childNorm) childSubqNormSet.add(childNorm);
+        });
+      }
+    });
+
+    // Also group any sharedQuestions that explicitly have parentId pointing to another sharedQuestion
+    const sharedChildrenByParentId = new Map<string, BankSubQuestion[]>();
+    sharedQuestions.forEach((sq) => {
+      if (sq.parentId) {
+        const list = sharedChildrenByParentId.get(sq.parentId) || [];
+        list.push({
+          id: sq.id,
+          content: sq.content,
+          marks: sq.marks || 1,
+          questionType: sq.questionType,
+          options: sq.options,
+          difficulty: sq.difficulty,
+          cognitiveLevel: sq.cognitiveLevel,
+        });
+        sharedChildrenByParentId.set(sq.parentId, list);
+      }
+    });
+
+    return sharedQuestions
+      .map((q) => {
+        if (q.subquestions && q.subquestions.length > 0) return q;
+        const norm = normalizeText(q.content);
+        const derived =
+          sharedChildrenByParentId.get(q.id) ||
+          parentSubqsBySharedId.get(q.id) ||
+          (norm ? parentSubqsByNormContent.get(norm) : undefined);
+        if (derived && derived.length > 0) {
+          return { ...q, subquestions: derived };
+        }
+        return q;
+      })
+      .filter((q) => {
+        if (q.parentId) return false;
+        const hasSubqs = q.subquestions && q.subquestions.length > 0;
+        if (!hasSubqs) {
+          const norm = normalizeText(q.content);
+          if (norm && childSubqNormSet.has(norm)) {
+            return false;
+          }
+        }
+        return true;
+      });
+  }, [sharedQuestions, allPQs, myQuestions, parentQuestionSubqsMap]);
 
   // Aggregate distinct lookup values from shared questions + local tables for dropdown options
   const filterOptions = useMemo(() => {

@@ -45,7 +45,7 @@ export default function SectionEditModal({
   };
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 11000 }} onClick={onClose}>
+    <div className="modal-overlay" style={{ zIndex: 11000 }}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580, width: '90vw' }}>
         <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

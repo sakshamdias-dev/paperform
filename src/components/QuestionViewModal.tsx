@@ -40,7 +40,7 @@ export default function QuestionViewModal({ question, onClose, onInsert }: Quest
   if (!question) return null;
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 11500 }} onClick={onClose}>
+    <div className="modal-overlay" style={{ zIndex: 11500 }}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 700, width: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -123,7 +123,8 @@ export default function QuestionViewModal({ question, onClose, onInsert }: Quest
               padding: 16,
               borderRadius: 8,
               border: '1px solid #e2e8f0',
-              marginBottom: 16
+              marginBottom: 16,
+              whiteSpace: 'pre-wrap'
             }}
             dangerouslySetInnerHTML={{ __html: preprocessMathHtml(question.content) }}
           />

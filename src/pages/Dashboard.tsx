@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Plus, Trash2, Copy, Edit, FolderOpen, LogOut, Loader2, BookOpen, Users, GraduationCap, Search, Lock, Bell, Bookmark, Tags, ListFilter } from 'lucide-react';
+import { FileText, Plus, Trash2, Copy, Edit, FolderOpen, LogOut, Loader2, BookOpen, Users, GraduationCap, Search, Lock, Bell, Bookmark, Tags, ListFilter, X } from 'lucide-react';
 import { useStore } from '../store';
 import { supabase } from '../supabase';
 
@@ -407,10 +407,13 @@ export default function Dashboard() {
 
       {/* New Paper Modal */}
       {showNewModal && (
-        <div className="modal-overlay" onClick={() => setShowNewModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="modal-title">Create New Question Paper</h2>
+              <button className="modal-close-btn" onClick={() => setShowNewModal(false)} title="Close">
+                <X size={18} />
+              </button>
             </div>
             <div className="modal-content" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               <div className="property-field">
@@ -526,10 +529,13 @@ export default function Dashboard() {
 
       {/* Settings Modal */}
       {showSettingsModal && (
-        <div className="modal-overlay" onClick={() => setShowSettingsModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600 }}>
-            <div className="modal-header">
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="modal-title">Paper Details</h2>
+              <button className="modal-close-btn" onClick={() => setShowSettingsModal(false)} title="Close">
+                <X size={18} />
+              </button>
             </div>
             <div className="modal-content">
               <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -743,10 +749,13 @@ export default function Dashboard() {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="modal-title">Delete Paper</h2>
+              <button className="modal-close-btn" onClick={() => setDeleteConfirm(null)} title="Close">
+                <X size={18} />
+              </button>
             </div>
             <div className="modal-content">
               <p>Are you sure you want to delete this paper? This action cannot be undone.</p>
