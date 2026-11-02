@@ -17,10 +17,17 @@ function App() {
 
   useEffect(() => {
     let mounted = true;
+    let loadedUserId: string | null = useStore.getState().user?.id ?? null;
+    let fetchInFlight = false;
 
     // Function to handle user session and profile
     const handleSession = async (session: any) => {
       if (session?.user) {
+        if (loadedUserId === session.user.id || fetchInFlight) {
+          if (mounted) setLoading(false);
+          return;
+        }
+        fetchInFlight = true;
         try {
           const { data: profileData } = await supabase
             .from('profiles')
@@ -33,6 +40,7 @@ function App() {
             : localStorage.getItem('questforma_privacy_pref') === 'true';
 
           if (mounted) {
+            loadedUserId = session.user.id;
             setUser({
               id: session.user.id,
               fullName: profileData?.full_name || session.user.email?.split('@')[0] || 'User',
@@ -51,24 +59,32 @@ function App() {
           }
         } catch (err) {
           console.error('Profile fetch error:', err);
+        } finally {
+          fetchInFlight = false;
         }
       } else {
+        loadedUserId = null;
         if (mounted) logout();
       }
       
       if (mounted) setLoading(false);
     };
 
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (mounted) handleSession(session);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
-        handleSession(session);
+    // Listen for auth changes (INITIAL_SESSION fires automatically on registration)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        // Defer out of GoTrue's internal auth lock before making Supabase DB queries
+        setTimeout(() => {
+          if (mounted) void handleSession(session);
+        }, 0);
+      } else if (event === 'TOKEN_REFRESHED') {
+        if (!loadedUserId && session?.user) {
+          setTimeout(() => {
+            if (mounted) void handleSession(session);
+          }, 0);
+        }
       } else if (event === 'SIGNED_OUT') {
+        loadedUserId = null;
         if (mounted) {
           logout();
           setLoading(false);
