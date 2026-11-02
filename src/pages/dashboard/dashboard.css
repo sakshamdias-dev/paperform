@@ -1878,6 +1878,119 @@
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 12px;
 }
+
+/* Question Bank Advanced Filter Drawer */
+.qf-filter-drawer {
+  padding: 14px 16px;
+  background: var(--qf-surface);
+  border: 1px solid var(--qf-border);
+  border-radius: var(--qf-radius-lg);
+  box-shadow: var(--qf-shadow-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: qfFadeIn 0.15s ease-out;
+}
+
+@keyframes qfFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.qf-filter-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.qf-filter-drawer__title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--qf-text-3);
+}
+
+.qf-filter-grid-8 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+@media (max-width: 1024px) {
+  .qf-filter-grid-8 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .qf-filter-grid-8 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.qf-filter-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.qf-filter-cell label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--qf-text-2);
+}
+
+.qf-active-filter-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--qf-subtle);
+  border: 1px dashed var(--qf-border-strong);
+  border-radius: var(--qf-radius);
+  font-size: 12px;
+}
+
+.qf-active-filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--qf-surface);
+  border: 1px solid var(--qf-border);
+  color: var(--qf-text);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.qf-active-filter-tag button {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 2px;
+  cursor: pointer;
+  color: var(--qf-text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qf-active-filter-tag button:hover {
+  color: var(--qf-danger);
+}
+
+.qf-cog-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+}
+
 .qf-q-card {
   display: flex;
   flex-direction: column;
