@@ -3021,15 +3021,15 @@ export default function Editor() {
           >
             <div className="barcode-wrapper" style={{ position: 'relative' }}>
               <div className="barcode-text">QP Code: {paper.qpCode}</div>
-              <button 
+              <button
                 onClick={() => updateQuestionPaper(paper.id, { qpCode: '' })}
                 className="hide-on-print"
-                style={{ 
-                  position: 'absolute', top: -10, right: -10, 
-                  background: 'var(--danger-color, #ef4444)', color: 'white', 
-                  borderRadius: '50%', width: 20, height: 20, 
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                  border: 'none', cursor: 'pointer', fontSize: 12, padding: 0 
+                style={{
+                  position: 'absolute', top: -10, right: -10,
+                  background: 'var(--danger-color, #ef4444)', color: 'white',
+                  borderRadius: '50%', width: 20, height: 20,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: 'none', cursor: 'pointer', fontSize: 12, padding: 0
                 }}
                 title="Remove QP Code"
               >
@@ -3121,14 +3121,22 @@ export default function Editor() {
             <Settings size={14} /> Paper Settings
           </button>
           <button
-            className={`toolbar-btn-outlined ${isConstructorOpen ? 'active' : ''}`}
+            className={`toolbar-btn-priority-secondary ${isConstructorOpen ? 'active' : ''}`}
             onClick={() => { setIsConstructorOpen(true); setActiveView('tree'); }}
+            title="Edit and organize paper questions"
           >
-            <Layers size={14} /> Edit/View Questions
+            <Layers size={14} />
+            <span>Edit/View Questions</span>
           </button>
-          <button className="toolbar-btn-outlined" onClick={exportPDF} disabled={isExporting} title="Export as PDF">
+          <button
+            className="toolbar-btn-priority-export"
+            onClick={exportPDF}
+            disabled={isExporting}
+            title="Export as print-ready PDF"
+          >
             {isExporting ? <Loader2 size={14} className="spin" /> : <Printer size={14} />}
-            {isExporting ? 'Generating...' : 'Export PDF'}
+            <span>{isExporting ? 'Generating PDF...' : 'Export PDF'}</span>
+            {!isExporting}
           </button>
         </div>
       </div>
@@ -3381,9 +3389,9 @@ export default function Editor() {
 
       {/* CENTER - Clean HTML Paper (WYSIWYG) */}
       <div className="editor-canvas">
-        <div 
-          className="paper-container" 
-          ref={paperRef} 
+        <div
+          className="paper-container"
+          ref={paperRef}
           id="printable-paper"
           onMouseDown={handlePaperImageMouseDown}
           style={{
@@ -4575,458 +4583,458 @@ export default function Editor() {
               <X size={18} />
             </button>
           </div>
-            <div className="drawer-content">
-              <div className="drawer-section-divider" style={{ marginTop: 0 }}>Paper Details</div>
-              <div className="property-field">
-                <label className="property-label">Paper Title</label>
+          <div className="drawer-content">
+            <div className="drawer-section-divider" style={{ marginTop: 0 }}>Paper Details</div>
+            <div className="property-field">
+              <label className="property-label">Paper Title</label>
+              <input
+                type="text"
+                className="property-input"
+                value={paper.title}
+                onChange={(e) => updateQuestionPaper(paper.id, { title: e.target.value })}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div className="property-field" style={{ flex: 1 }}>
+                <label className="property-label">QP Code</label>
                 <input
                   type="text"
                   className="property-input"
-                  value={paper.title}
-                  onChange={(e) => updateQuestionPaper(paper.id, { title: e.target.value })}
+                  value={paper.qpCode || ''}
+                  onChange={(e) => updateQuestionPaper(paper.id, { qpCode: e.target.value })}
+                  placeholder="Enter QP Code..."
                 />
               </div>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">QP Code</label>
+            </div>
+
+            <div className="drawer-section-divider">Typography & Sizing</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="property-field">
+                <label className="property-label">Base Font Size (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.fontSize || 14}
+                  onChange={(val) => handleUpdateHeaderConfig({ fontSize: val })}
+                  placeholder="14"
+                  fallback={14}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Body Font Size (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}
+                  onChange={(val) => handleUpdateHeaderConfig({ bodyFontSize: val })}
+                  fallback={14}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">School Name Size (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.schoolNameFontSize || 24}
+                  onChange={(val) => handleUpdateHeaderConfig({ schoolNameFontSize: val })}
+                  fallback={24}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Paper Title Size (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.titleFontSize || 16}
+                  onChange={(val) => handleUpdateHeaderConfig({ titleFontSize: val })}
+                  fallback={16}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Section Title Size (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.sectionTitleFontSize || 16}
+                  onChange={(val) => handleUpdateHeaderConfig({ sectionTitleFontSize: val })}
+                  fallback={16}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Instructions Size (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.instructionsFontSize || 13}
+                  onChange={(val) => handleUpdateHeaderConfig({ instructionsFontSize: val })}
+                  fallback={13}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Meta Info Size (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.infoFontSize || 13}
+                  onChange={(val) => handleUpdateHeaderConfig({ infoFontSize: val })}
+                  fallback={13}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Font Family</label>
+                <select
+                  className="property-input"
+                  value={paper.headerConfig?.fontFamily || 'Inter, sans-serif'}
+                  onChange={(e) => handleUpdateHeaderConfig({ fontFamily: e.target.value })}
+                >
+                  <option value="Inter, sans-serif">Inter</option>
+                  <option value="Arial, sans-serif">Arial</option>
+                  <option value="'Times New Roman', serif">Times New Roman</option>
+                  <option value="Courier New, monospace">Courier New</option>
+                  <option value="Georgia, serif">Georgia</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="drawer-section-divider">Vertical Spacing Controls (Print & Layout)</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="property-field">
+                <label className="property-label">Section Top Spacing (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.spacing?.sectionTop ?? 14}
+                  onChange={(val) => handleUpdateHeaderConfig({
+                    spacing: { ...(paper.headerConfig?.spacing || {}), sectionTop: val }
+                  })}
+                  fallback={14}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Section to Description Gap (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.spacing?.sectionDescGap ?? 2}
+                  onChange={(val) => handleUpdateHeaderConfig({
+                    spacing: { ...(paper.headerConfig?.spacing || {}), sectionDescGap: val }
+                  })}
+                  fallback={2}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Section Bottom Spacing (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.spacing?.sectionBottom ?? 8}
+                  onChange={(val) => handleUpdateHeaderConfig({
+                    spacing: { ...(paper.headerConfig?.spacing || {}), sectionBottom: val }
+                  })}
+                  fallback={8}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Question Spacing (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.spacing?.questionGap ?? 14}
+                  onChange={(val) => handleUpdateHeaderConfig({
+                    spacing: { ...(paper.headerConfig?.spacing || {}), questionGap: val }
+                  })}
+                  fallback={14}
+                />
+              </div>
+              <div className="property-field">
+                <label className="property-label">Sub-question Spacing (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.spacing?.subQuestionGap ?? 8}
+                  onChange={(val) => handleUpdateHeaderConfig({
+                    spacing: { ...(paper.headerConfig?.spacing || {}), subQuestionGap: val }
+                  })}
+                  fallback={8}
+                />
+              </div>
+              {/* VERTICAL TEXT SPACING (LINE HEIGHT) SLIDER */}
+              <div
+                className="property-field"
+                style={{
+                  gridColumn: '1 / -1',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 10,
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  marginTop: 4,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <label className="property-label" style={{ fontWeight: 700, margin: 0, fontSize: 12.5, color: '#1e293b' }}>
+                      Vertical Text Spacing
+                    </label>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: '1px 6px',
+                        background: '#ecfdf5',
+                        color: '#059669',
+                        borderRadius: 4,
+                        border: '1px solid #a7f3d0'
+                      }}
+                    >
+                      Bounded
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: '#2563eb',
+                        background: '#eff6ff',
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                        border: '1px solid #bfdbfe',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {(Math.min(2.40, Math.max(1.20, paper.headerConfig?.spacing?.lineHeight ?? 1.45))).toFixed(2)}x
+                    </span>
+                  </div>
+                </div>
+
+                {/* Range Slider with strict bounds */}
+                <div style={{ position: 'relative', width: '100%', paddingTop: 2 }}>
                   <input
-                    type="text"
-                    className="property-input"
-                    value={paper.qpCode || ''}
-                    onChange={(e) => updateQuestionPaper(paper.id, { qpCode: e.target.value })}
-                    placeholder="Enter QP Code..."
+                    type="range"
+                    min="1.20"
+                    max="2.40"
+                    step="0.05"
+                    value={Math.min(2.40, Math.max(1.20, paper.headerConfig?.spacing?.lineHeight ?? 1.45))}
+                    onChange={(e) => {
+                      const raw = parseFloat(e.target.value);
+                      const val = Math.min(2.40, Math.max(1.20, Number.isFinite(raw) ? raw : 1.45));
+                      handleUpdateHeaderConfig({
+                        spacing: { ...(paper.headerConfig?.spacing || {}), lineHeight: Math.round(val * 100) / 100 }
+                      });
+                    }}
+                    style={{
+                      width: '100%',
+                      accentColor: '#2563eb',
+                      cursor: 'pointer',
+                      height: 6,
+                      borderRadius: 4,
+                    }}
                   />
                 </div>
-              </div>
 
-              <div className="drawer-section-divider">Typography & Sizing</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="property-field">
-                  <label className="property-label">Base Font Size (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.fontSize || 14}
-                    onChange={(val) => handleUpdateHeaderConfig({ fontSize: val })}
-                    placeholder="14"
-                    fallback={14}
-                  />
+                {/* Min / Max Labels */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#64748b', fontWeight: 500, marginTop: -2 }}>
+                  <span>Min: 1.20x <span style={{ color: '#059669', fontSize: 9.5 }}>(Anti-overlap limit)</span></span>
+                  <span>1.45x (Standard)</span>
+                  <span>Max: 2.40x</span>
                 </div>
-                <div className="property-field">
-                  <label className="property-label">Body Font Size (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}
-                    onChange={(val) => handleUpdateHeaderConfig({ bodyFontSize: val })}
-                    fallback={14}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">School Name Size (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.schoolNameFontSize || 24}
-                    onChange={(val) => handleUpdateHeaderConfig({ schoolNameFontSize: val })}
-                    fallback={24}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">Paper Title Size (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.titleFontSize || 16}
-                    onChange={(val) => handleUpdateHeaderConfig({ titleFontSize: val })}
-                    fallback={16}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">Section Title Size (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.sectionTitleFontSize || 16}
-                    onChange={(val) => handleUpdateHeaderConfig({ sectionTitleFontSize: val })}
-                    fallback={16}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">Instructions Size (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.instructionsFontSize || 13}
-                    onChange={(val) => handleUpdateHeaderConfig({ instructionsFontSize: val })}
-                    fallback={13}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">Meta Info Size (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.infoFontSize || 13}
-                    onChange={(val) => handleUpdateHeaderConfig({ infoFontSize: val })}
-                    fallback={13}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">Font Family</label>
-                  <select
-                    className="property-input"
-                    value={paper.headerConfig?.fontFamily || 'Inter, sans-serif'}
-                    onChange={(e) => handleUpdateHeaderConfig({ fontFamily: e.target.value })}
-                  >
-                    <option value="Inter, sans-serif">Inter</option>
-                    <option value="Arial, sans-serif">Arial</option>
-                    <option value="'Times New Roman', serif">Times New Roman</option>
-                    <option value="Courier New, monospace">Courier New</option>
-                    <option value="Georgia, serif">Georgia</option>
-                  </select>
-                </div>
-              </div>
 
-              <div className="drawer-section-divider">Vertical Spacing Controls (Print & Layout)</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="property-field">
-                  <label className="property-label">Section Top Spacing (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.spacing?.sectionTop ?? 14}
-                    onChange={(val) => handleUpdateHeaderConfig({
-                      spacing: { ...(paper.headerConfig?.spacing || {}), sectionTop: val }
-                    })}
-                    fallback={14}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">Section to Description Gap (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.spacing?.sectionDescGap ?? 2}
-                    onChange={(val) => handleUpdateHeaderConfig({
-                      spacing: { ...(paper.headerConfig?.spacing || {}), sectionDescGap: val }
-                    })}
-                    fallback={2}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">Section Bottom Spacing (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.spacing?.sectionBottom ?? 8}
-                    onChange={(val) => handleUpdateHeaderConfig({
-                      spacing: { ...(paper.headerConfig?.spacing || {}), sectionBottom: val }
-                    })}
-                    fallback={8}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">Question Spacing (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.spacing?.questionGap ?? 14}
-                    onChange={(val) => handleUpdateHeaderConfig({
-                      spacing: { ...(paper.headerConfig?.spacing || {}), questionGap: val }
-                    })}
-                    fallback={14}
-                  />
-                </div>
-                <div className="property-field">
-                  <label className="property-label">Sub-question Spacing (px)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.headerConfig?.spacing?.subQuestionGap ?? 8}
-                    onChange={(val) => handleUpdateHeaderConfig({
-                      spacing: { ...(paper.headerConfig?.spacing || {}), subQuestionGap: val }
-                    })}
-                    fallback={8}
-                  />
-                </div>
-                {/* VERTICAL TEXT SPACING (LINE HEIGHT) SLIDER */}
+                {/* Anti-Overlap Helper Info */}
                 <div
-                  className="property-field"
                   style={{
-                    gridColumn: '1 / -1',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 10,
-                    padding: '12px 14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                    marginTop: 4,
+                    fontSize: 11,
+                    lineHeight: 1.35,
+                    color: '#0369a1',
+                    background: '#f0f9ff',
+                    border: '1px solid #e0f2fe',
+                    borderRadius: 6,
+                    padding: '6px 8px',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <label className="property-label" style={{ fontWeight: 700, margin: 0, fontSize: 12.5, color: '#1e293b' }}>
-                        Vertical Text Spacing
-                      </label>
-                      <span
+                  <strong>Overlap Protection:</strong> Lower limit is fixed at 1.20x to prevent mathematical formulas, subscripts, fractions, and adjacent lines from colliding or overlapping.
+                </div>
+
+                {/* Quick Preset Buttons */}
+                <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+                  {[
+                    { label: 'Compact', val: 1.25 },
+                    { label: 'Standard', val: 1.45 },
+                    { label: 'Relaxed', val: 1.75 },
+                    { label: 'Spacious', val: 2.00 },
+                  ].map((preset) => {
+                    const currentVal = Math.min(2.40, Math.max(1.20, paper.headerConfig?.spacing?.lineHeight ?? 1.45));
+                    const isSelected = Math.abs(currentVal - preset.val) < 0.03;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        className={`btn ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
                         style={{
-                          fontSize: 10,
-                          fontWeight: 600,
-                          padding: '1px 6px',
-                          background: '#ecfdf5',
-                          color: '#059669',
-                          borderRadius: 4,
-                          border: '1px solid #a7f3d0'
-                        }}
-                      >
-                        Bounded
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: '#2563eb',
-                          background: '#eff6ff',
-                          padding: '2px 8px',
+                          padding: '3px 6px',
+                          fontSize: 10.5,
+                          flex: 1,
+                          justifyContent: 'center',
+                          fontWeight: isSelected ? 700 : 500,
                           borderRadius: 6,
-                          border: '1px solid #bfdbfe',
-                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                        onClick={() => {
+                          handleUpdateHeaderConfig({
+                            spacing: { ...(paper.headerConfig?.spacing || {}), lineHeight: preset.val }
+                          });
                         }}
                       >
-                        {(Math.min(2.40, Math.max(1.20, paper.headerConfig?.spacing?.lineHeight ?? 1.45))).toFixed(2)}x
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Range Slider with strict bounds */}
-                  <div style={{ position: 'relative', width: '100%', paddingTop: 2 }}>
-                    <input
-                      type="range"
-                      min="1.20"
-                      max="2.40"
-                      step="0.05"
-                      value={Math.min(2.40, Math.max(1.20, paper.headerConfig?.spacing?.lineHeight ?? 1.45))}
-                      onChange={(e) => {
-                        const raw = parseFloat(e.target.value);
-                        const val = Math.min(2.40, Math.max(1.20, Number.isFinite(raw) ? raw : 1.45));
-                        handleUpdateHeaderConfig({
-                          spacing: { ...(paper.headerConfig?.spacing || {}), lineHeight: Math.round(val * 100) / 100 }
-                        });
-                      }}
-                      style={{
-                        width: '100%',
-                        accentColor: '#2563eb',
-                        cursor: 'pointer',
-                        height: 6,
-                        borderRadius: 4,
-                      }}
-                    />
-                  </div>
-
-                  {/* Min / Max Labels */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#64748b', fontWeight: 500, marginTop: -2 }}>
-                    <span>Min: 1.20x <span style={{ color: '#059669', fontSize: 9.5 }}>(Anti-overlap limit)</span></span>
-                    <span>1.45x (Standard)</span>
-                    <span>Max: 2.40x</span>
-                  </div>
-
-                  {/* Anti-Overlap Helper Info */}
-                  <div
-                    style={{
-                      fontSize: 11,
-                      lineHeight: 1.35,
-                      color: '#0369a1',
-                      background: '#f0f9ff',
-                      border: '1px solid #e0f2fe',
-                      borderRadius: 6,
-                      padding: '6px 8px',
-                    }}
-                  >
-                    <strong>Overlap Protection:</strong> Lower limit is fixed at 1.20x to prevent mathematical formulas, subscripts, fractions, and adjacent lines from colliding or overlapping.
-                  </div>
-
-                  {/* Quick Preset Buttons */}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
-                    {[
-                      { label: 'Compact', val: 1.25 },
-                      { label: 'Standard', val: 1.45 },
-                      { label: 'Relaxed', val: 1.75 },
-                      { label: 'Spacious', val: 2.00 },
-                    ].map((preset) => {
-                      const currentVal = Math.min(2.40, Math.max(1.20, paper.headerConfig?.spacing?.lineHeight ?? 1.45));
-                      const isSelected = Math.abs(currentVal - preset.val) < 0.03;
-                      return (
-                        <button
-                          key={preset.label}
-                          type="button"
-                          className={`btn ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
-                          style={{
-                            padding: '3px 6px',
-                            fontSize: 10.5,
-                            flex: 1,
-                            justifyContent: 'center',
-                            fontWeight: isSelected ? 700 : 500,
-                            borderRadius: 6,
-                          }}
-                          onClick={() => {
-                            handleUpdateHeaderConfig({
-                              spacing: { ...(paper.headerConfig?.spacing || {}), lineHeight: preset.val }
-                            });
-                          }}
-                        >
-                          {preset.label} ({preset.val}x)
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div className="drawer-section-divider">Institution</div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0 4px 0' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Show Institution on Paper</div>
-                  <div style={{ fontSize: 11, color: '#64748b' }}>Display institution heading on paper</div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={paper.headerConfig?.visibleHeaderFields?.schoolName !== false}
-                  onChange={(e) => handleUpdateHeaderConfig({
-                    visibleHeaderFields: {
-                      ...(paper.headerConfig?.visibleHeaderFields || {}),
-                      schoolName: e.target.checked
-                    }
+                        {preset.label} ({preset.val}x)
+                      </button>
+                    );
                   })}
-                  style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }}
-                />
+                </div>
               </div>
-              <div className="property-field">
-                <label className="property-label">Institution Name</label>
-                <input
-                  type="text"
-                  className="property-input"
-                  value={user?.schoolName || ''}
-                  onChange={(e) => {
-                    if (user) useStore.getState().setUser({ ...user, schoolName: e.target.value });
-                  }}
-                  placeholder="Enter Institution name..."
-                />
-              </div>
-              <div className="property-field">
-                <label className="property-label">Institution Logo</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleLogoUpload}
-                  className="property-input"
-                  style={{ fontSize: 12 }}
-                />
-                {paper.headerConfig?.logoUrl && (
-                  <button
-                    className="btn btn-danger"
-                    onClick={() => handleUpdateHeaderConfig({ logoUrl: undefined })}
-                    style={{ width: '100%', marginTop: 8, fontSize: 12, padding: '4px 8px' }}
-                  >
-                    Remove Logo
-                  </button>
-                )}
-              </div>
+            </div>
 
-              <div className="drawer-section-divider">Exam Details</div>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Course</label>
-                  <select
-                    className="property-input"
-                    value={paper.courseId || ''}
-                    onChange={(e) => updateQuestionPaper(paper.id, { courseId: e.target.value || undefined })}
-                  >
-                    <option value="">No Course</option>
-                    {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Subject</label>
-                  <select
-                    className="property-input"
-                    value={paper.subjectId || ''}
-                    onChange={(e) => updateQuestionPaper(paper.id, { subjectId: e.target.value || undefined })}
-                  >
-                    <option value="">No Subject</option>
-                    {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </div>
+            <div className="drawer-section-divider">Institution</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0 4px 0' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Show Institution on Paper</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>Display institution heading on paper</div>
               </div>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Class</label>
-                  <select
-                    className="property-input"
-                    value={paper.classId || ''}
-                    onChange={(e) => updateQuestionPaper(paper.id, { classId: e.target.value || undefined })}
-                  >
-                    <option value="">No Class</option>
-                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Date</label>
-                  <input
-                    type="date"
-                    className="property-input"
-                    value={paper.date || ''}
-                    onChange={(e) => updateQuestionPaper(paper.id, { date: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Duration (min)</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.duration || 0}
-                    onChange={(val) => updateQuestionPaper(paper.id, { duration: val })}
-                    fallback={0}
-                  />
-                </div>
-                <div className="property-field" style={{ flex: 1 }}>
-                  <label className="property-label">Max Marks</label>
-                  <LazyNumberInput
-                    className="property-input"
-                    value={paper.maxMarks || 0}
-                    onChange={(val) => updateQuestionPaper(paper.id, { maxMarks: val })}
-                    fallback={0}
-                  />
-                </div>
-              </div>
+              <input
+                type="checkbox"
+                checked={paper.headerConfig?.visibleHeaderFields?.schoolName !== false}
+                onChange={(e) => handleUpdateHeaderConfig({
+                  visibleHeaderFields: {
+                    ...(paper.headerConfig?.visibleHeaderFields || {}),
+                    schoolName: e.target.checked
+                  }
+                })}
+                style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }}
+              />
+            </div>
+            <div className="property-field">
+              <label className="property-label">Institution Name</label>
+              <input
+                type="text"
+                className="property-input"
+                value={user?.schoolName || ''}
+                onChange={(e) => {
+                  if (user) useStore.getState().setUser({ ...user, schoolName: e.target.value });
+                }}
+                placeholder="Enter Institution name..."
+              />
+            </div>
+            <div className="property-field">
+              <label className="property-label">Institution Logo</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleLogoUpload}
+                className="property-input"
+                style={{ fontSize: 12 }}
+              />
+              {paper.headerConfig?.logoUrl && (
+                <button
+                  className="btn btn-danger"
+                  onClick={() => handleUpdateHeaderConfig({ logoUrl: undefined })}
+                  style={{ width: '100%', marginTop: 8, fontSize: 12, padding: '4px 8px' }}
+                >
+                  Remove Logo
+                </button>
+              )}
+            </div>
 
-              <div className="drawer-section-divider">Instructions</div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0 4px 0' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Show Instructions on Paper</div>
-                  <div style={{ fontSize: 11, color: '#64748b' }}>Display exam instructions below the header</div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={paper.headerConfig?.visibleHeaderFields?.instructions !== false}
-                  onChange={(e) => handleUpdateHeaderConfig({
-                    visibleHeaderFields: {
-                      ...(paper.headerConfig?.visibleHeaderFields || {}),
-                      instructions: e.target.checked
-                    }
-                  })}
-                  style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }}
-                />
+            <div className="drawer-section-divider">Exam Details</div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div className="property-field" style={{ flex: 1 }}>
+                <label className="property-label">Course</label>
+                <select
+                  className="property-input"
+                  value={paper.courseId || ''}
+                  onChange={(e) => updateQuestionPaper(paper.id, { courseId: e.target.value || undefined })}
+                >
+                  <option value="">No Course</option>
+                  {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
               </div>
-              <div className="property-field">
-                <label className="property-label">Instructions</label>
-                <FullQuill
-                  value={paper.instructions || ''}
-                  onChange={(val) => updateQuestionPaper(paper.id, { instructions: val })}
-                  placeholder="Enter instructions..."
-                  openMathDialog={openMathDialog}
-                  toolbarId="instructions-toolbar"
-                  onImageClick={handleQuillImageClick}
+              <div className="property-field" style={{ flex: 1 }}>
+                <label className="property-label">Subject</label>
+                <select
+                  className="property-input"
+                  value={paper.subjectId || ''}
+                  onChange={(e) => updateQuestionPaper(paper.id, { subjectId: e.target.value || undefined })}
+                >
+                  <option value="">No Subject</option>
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div className="property-field" style={{ flex: 1 }}>
+                <label className="property-label">Class</label>
+                <select
+                  className="property-input"
+                  value={paper.classId || ''}
+                  onChange={(e) => updateQuestionPaper(paper.id, { classId: e.target.value || undefined })}
+                >
+                  <option value="">No Class</option>
+                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="property-field" style={{ flex: 1 }}>
+                <label className="property-label">Date</label>
+                <input
+                  type="date"
+                  className="property-input"
+                  value={paper.date || ''}
+                  onChange={(e) => updateQuestionPaper(paper.id, { date: e.target.value })}
                 />
               </div>
             </div>
-            <div className="drawer-footer">
-              <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setShowPaperSettings(false)}>Done</button>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div className="property-field" style={{ flex: 1 }}>
+                <label className="property-label">Duration (min)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.duration || 0}
+                  onChange={(val) => updateQuestionPaper(paper.id, { duration: val })}
+                  fallback={0}
+                />
+              </div>
+              <div className="property-field" style={{ flex: 1 }}>
+                <label className="property-label">Max Marks</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.maxMarks || 0}
+                  onChange={(val) => updateQuestionPaper(paper.id, { maxMarks: val })}
+                  fallback={0}
+                />
+              </div>
+            </div>
+
+            <div className="drawer-section-divider">Instructions</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0 4px 0' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Show Instructions on Paper</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>Display exam instructions below the header</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={paper.headerConfig?.visibleHeaderFields?.instructions !== false}
+                onChange={(e) => handleUpdateHeaderConfig({
+                  visibleHeaderFields: {
+                    ...(paper.headerConfig?.visibleHeaderFields || {}),
+                    instructions: e.target.checked
+                  }
+                })}
+                style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#2563eb' }}
+              />
+            </div>
+            <div className="property-field">
+              <label className="property-label">Instructions</label>
+              <FullQuill
+                value={paper.instructions || ''}
+                onChange={(val) => updateQuestionPaper(paper.id, { instructions: val })}
+                placeholder="Enter instructions..."
+                openMathDialog={openMathDialog}
+                toolbarId="instructions-toolbar"
+                onImageClick={handleQuillImageClick}
+              />
             </div>
           </div>
-        )}
+          <div className="drawer-footer">
+            <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setShowPaperSettings(false)}>Done</button>
+          </div>
+        </div>
+      )}
 
       {/* MathLive Equation Dialog (Rendered last with highest z-index so it always appears above the Question Modal) */}
       {showMathDialog && (

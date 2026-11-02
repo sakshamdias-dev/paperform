@@ -142,6 +142,7 @@ interface AppState {
   fetchSharedQuestions: () => Promise<void>;
   fetchNotifications: () => Promise<void>;
   toggleKeepQuestionsPrivate: (value?: boolean) => Promise<void>;
+  updateProfile: (updates: { fullName?: string; schoolName?: string }) => Promise<boolean>;
   
   createCourse: (name: string) => Promise<string>;
   updateCourse: (id: string, name: string) => Promise<void>;
@@ -255,6 +256,27 @@ export const useStore = create<AppState>()((set, get) => ({
     } catch (e) {
       console.warn('Could not persist privacy toggle to database:', e);
     }
+  },
+
+  updateProfile: async ({ fullName, schoolName }) => {
+    const { user } = get();
+    if (!user) return false;
+    const next = {
+      ...user,
+      ...(fullName !== undefined ? { fullName } : {}),
+      ...(schoolName !== undefined ? { schoolName } : {}),
+      updatedAt: Date.now(),
+    };
+    set({ user: next });
+    const row: Record<string, string> = {};
+    if (fullName !== undefined) row.full_name = fullName;
+    if (schoolName !== undefined) row.school_name = schoolName;
+    const { error } = await supabase.from('profiles').update(row).eq('id', user.id);
+    if (error) {
+      console.error('[updateProfile]', error.message);
+      return false;
+    }
+    return true;
   },
 
   fetchCourses: async () => {

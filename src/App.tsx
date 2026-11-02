@@ -3,7 +3,13 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store';
 import { supabase } from './supabase';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
+import DashboardLayout from './pages/dashboard/DashboardLayout';
+import Overview from './pages/dashboard/Overview';
+import Papers from './pages/dashboard/Papers';
+import Schedule from './pages/dashboard/Schedule';
+import QuestionBank from './pages/dashboard/QuestionBank';
+import Notifications from './pages/dashboard/Notifications';
+import SettingsPage from './pages/dashboard/Settings';
 import Editor from './pages/Editor';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -130,7 +136,14 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={user?.id ? <Navigate to="/" replace /> : <Login />} />
-        <Route path="/" element={user?.id ? <Dashboard /> : <Navigate to="/login" replace />} />
+        <Route path="/" element={user?.id ? <DashboardLayout /> : <Navigate to="/login" replace />}>
+          <Route index element={<Overview />} />
+          <Route path="papers" element={<Papers />} />
+          <Route path="schedule" element={<Schedule />} />
+          <Route path="question-bank" element={<QuestionBank />} />
+          <Route path="notifications" element={<Notifications />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
         <Route
           path="/editor/:id"
           element={
@@ -143,6 +156,7 @@ function App() {
             )
           }
         />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

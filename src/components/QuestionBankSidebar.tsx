@@ -107,83 +107,52 @@ function SubquestionsModal({
   if (typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="modal-overlay" style={{ zIndex: 11500 }}>
+    <div className="qb-modal-backdrop" onClick={onClose} style={{ zIndex: 11500 }}>
       <div
-        className="modal"
+        className="qb-subq-modal"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: 700,
-          width: '90vw',
-          maxHeight: '85vh',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
       >
         {/* Modal Header */}
-        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, marginRight: 12 }}>
-            <Layers size={18} color="var(--primary, #034089)" style={{ flexShrink: 0 }} />
-            <h2
-              className="modal-title"
-              style={{
-                fontSize: 18,
-                margin: 0,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-              title={`Select Subquestions${cleanTitle ? `: ${cleanTitle}` : ''}`}
-            >
-              Select Subquestions{cleanTitle ? `: ${cleanTitle}` : ''}
-            </h2>
-            {isShared && (
-              <span className="qb-modal-brand-badge" style={{ flexShrink: 0, marginLeft: 4 }}>EXAMFRIENDLY</span>
-            )}
+        <div className="qb-subq-modal-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1, marginRight: 12 }}>
+            <span className="qb-header-icon">
+              <Layers size={15} />
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <h2
+                className="qb-subq-modal-title"
+                title={cleanTitle || 'Select Subquestions'}
+              >
+                {cleanTitle || 'Select Subquestions'}
+              </h2>
+              <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 1 }}>
+                Choose which parts to insert into your paper
+              </div>
+            </div>
           </div>
-          <button className="modal-close-btn" onClick={onClose} title="Close">
-            <X size={18} />
+          <button className="qb-close-btn" onClick={onClose} title="Close">
+            <X size={16} />
           </button>
         </div>
 
         {/* Modal Toolbar / Select All & Total Marks */}
-        <div
-          className="qb-subq-modal-toolbar"
-          style={{
-            padding: '10px 20px',
-            background: '#f8fafc',
-            borderBottom: '1px solid #e2e8f0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <label className="qb-select-all-label" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, cursor: 'pointer' }}>
+        <div className="qb-subq-modal-toolbar">
+          <label className="qb-select-all-label">
             <input
               type="checkbox"
               checked={allSelected}
               onChange={handleToggleAll}
               className="qb-checkbox"
             />
-            <span>Select All</span>
+            <span>Select all ({subqs.length})</span>
           </label>
           <div className="qb-selected-marks-counter">
-            Total Selected: <strong>{selectedMarks} / {totalPossibleMarks} Marks</strong>
+            Selected: <strong>{selectedMarks}</strong> / {totalPossibleMarks} marks
           </div>
         </div>
 
         {/* Modal Content / Subquestions List */}
-        <div
-          className="modal-content"
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: 20,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-          }}
-        >
+        <div className="qb-subq-modal-list">
           {subqs.map((sq, idx) => {
             const isChecked = selectedSubqIds.has(sq.id);
             return (
@@ -202,10 +171,14 @@ function SubquestionsModal({
                   }}
                   onClick={(e) => e.stopPropagation()}
                   className="qb-checkbox"
+                  style={{ marginTop: 2 }}
                 />
                 <div className="qb-subq-item-body">
                   <div className="qb-subq-item-label">
-                    Q{detectedQNum}.{idx + 1} ({sq.marks || 1} Mark{(sq.marks || 1) === 1 ? '' : 's'})
+                    <span>Part {detectedQNum}.{idx + 1}</span>
+                    <span className="qb-subq-marks-pill">
+                      {sq.marks || 1} {((sq.marks || 1) === 1) ? 'mark' : 'marks'}
+                    </span>
                   </div>
                   <div
                     className="qb-subq-item-content tex2jax_process"
@@ -223,19 +196,16 @@ function SubquestionsModal({
                   )}
                 </div>
                 <div className="qb-subq-item-actions" onClick={(e) => e.stopPropagation()}>
-                  <span className="qb-subq-marks-pill">
-                    {sq.marks || 1}m
-                  </span>
                   <button
-                    className="btn qb-add-standalone-btn"
+                    className="qb-add-standalone-btn"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleAddStandalone(sq);
                     }}
                     disabled={insertingId === sq.id}
-                    title="Insert this subquestion as a standalone question into paper"
+                    title="Insert this part as a standalone question"
                   >
-                    <Plus size={13} /> Add to Paper
+                    <Plus size={12} /> Solo
                   </button>
                 </div>
               </div>
@@ -244,28 +214,16 @@ function SubquestionsModal({
         </div>
 
         {/* Modal Actions Footer */}
-        <div
-          className="modal-actions"
-          style={{
-            padding: '14px 20px',
-            borderTop: '1px solid #e2e8f0',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            alignItems: 'center',
-            gap: 10,
-            background: '#fafbfc',
-          }}
-        >
-          <button className="btn btn-secondary" onClick={onClose}>
+        <div className="qb-subq-modal-footer">
+          <button className="qb-btn-ghost" onClick={onClose}>
             Cancel
           </button>
           <button
-            className="btn btn-primary"
+            className="qb-btn-primary"
             disabled={selectedSubqIds.size === 0 || isInsertingSet}
             onClick={handleAddSet}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <Plus size={16} /> Add {selectedSubqIds.size} Question{selectedSubqIds.size === 1 ? '' : 's'}
+            <Plus size={14} /> Insert {selectedSubqIds.size} {selectedSubqIds.size === 1 ? 'part' : 'parts'} ({selectedMarks}m)
           </button>
         </div>
       </div>
@@ -632,170 +590,164 @@ export default function QuestionBankSidebar({
 
   if (!isOpen) return null;
 
+  const formatQuestionType = (type?: string) => {
+    switch (type) {
+      case 'mcq': return 'MCQ';
+      case 'fill_blank': return 'Fill in Blank';
+      case 'true_false': return 'True / False';
+      case 'subjective': return 'Subjective';
+      default: return type || 'Question';
+    }
+  };
+
+  const cognitiveDotColor = (level?: string) => {
+    switch (level) {
+      case 'remember': return '#d97706';
+      case 'understand': return '#0284c7';
+      case 'apply': return '#16a34a';
+      case 'analyse': return '#7c3aed';
+      case 'evaluate': return '#ea580c';
+      case 'create': return '#dc2626';
+      default: return '#0284c7';
+    }
+  };
+
   return (
     <aside className="question-bank-sidebar">
-      {/* Header */}
-      <div className="qb-header">
-        <div className="qb-title">
-          <BookOpen size={16} color="#2563eb" />
-          <span>Question Bank</span>
+      {/* Unified Header + Controls */}
+      <div className="qb-top">
+        <div className="qb-header">
+          <div className="qb-title-group">
+            <span className="qb-header-icon">
+              <BookOpen size={15} />
+            </span>
+            <div>
+              <div className="qb-title">Question Bank</div>
+              {(paperSubjectName || paperClassName) && (
+                <div className="qb-subtitle">
+                  {paperSubjectName || 'Paper'}{paperClassName ? ` · ${paperClassName}` : ''}
+                </div>
+              )}
+            </div>
+          </div>
+          <button className="qb-close-btn" onClick={onClose} title="Close Question Bank">
+            <X size={16} />
+          </button>
         </div>
-        <button className="qb-close-btn" onClick={onClose} title="Close Question Bank">
-          <X size={16} />
-        </button>
-      </div>
 
-      {/* Two Tabs */}
-      <div className="qb-tabs">
-        <button
-          className={`qb-tab-btn ${tab === 'shared' ? 'active' : ''}`}
-          onClick={() => setTab('shared')}
-        >
-          <Sparkles size={14} />
-          Shared Questions
-          <span className="qb-count-badge">{filteredShared.length}</span>
-        </button>
-        <button
-          className={`qb-tab-btn ${tab === 'my' ? 'active' : ''}`}
-          onClick={() => setTab('my')}
-        >
-          <Layers size={14} />
-          My Questions
-          <span className="qb-count-badge">{filteredMy.length}</span>
-        </button>
-      </div>
+        {/* Segmented Tabs */}
+        <div className="qb-tabs">
+          <button
+            className={`qb-tab-btn ${tab === 'shared' ? 'active' : ''}`}
+            onClick={() => setTab('shared')}
+          >
+            <Sparkles size={13} />
+            <span>Community</span>
+            <span className="qb-count-badge">{filteredShared.length}</span>
+          </button>
+          <button
+            className={`qb-tab-btn ${tab === 'my' ? 'active' : ''}`}
+            onClick={() => setTab('my')}
+          >
+            <Layers size={13} />
+            <span>My Library</span>
+            <span className="qb-count-badge">{filteredMy.length}</span>
+          </button>
+        </div>
 
-      {/* Search Bar + Filters Toggle Button */}
-      <div className="qb-filters" style={{ paddingBottom: 8 }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <div className="qb-search-wrapper" style={{ flex: 1, position: 'relative' }}>
-            <Search size={14} className="qb-search-icon" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', zIndex: 2, pointerEvents: 'none' }} />
+        {/* Search + Filter Toggle */}
+        <div className="qb-search-row">
+          <div className="qb-search-wrapper">
+            <Search size={14} className="qb-search-icon" />
             <input
               type="text"
               className="qb-search-input"
-              placeholder={tab === 'shared' ? 'Search by question, topic, author...' : 'Search my questions...'}
+              placeholder={tab === 'shared' ? 'Search question, chapter, author...' : 'Search my questions...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ paddingLeft: 34, boxSizing: 'border-box' }}
             />
             {searchTerm && (
               <button
+                className="qb-search-clear"
                 onClick={() => setSearchTerm('')}
-                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 2, zIndex: 2 }}
+                title="Clear search"
               >
                 <X size={12} />
               </button>
             )}
           </div>
           <button
-            className={`btn ${showFilters || activeFilterCount > 0 ? 'btn-primary' : 'btn-secondary'}`}
+            className={`qb-filter-btn ${showFilters || activeFilterCount > 0 ? 'is-active' : ''}`}
             onClick={() => setShowFilters(!showFilters)}
-            style={{
-              padding: '7px 10px',
-              fontSize: 12,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              flexShrink: 0,
-            }}
             title="Filter Questions"
           >
             <Filter size={13} />
             <span>Filters</span>
             {activeFilterCount > 0 && (
-              <span
-                style={{
-                  background: '#ef4444',
-                  color: 'white',
-                  borderRadius: 10,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  padding: '1px 5px',
-                  lineHeight: 1,
-                  marginLeft: 2,
-                }}
-              >
-                {activeFilterCount}
-              </span>
+              <span className="qb-filter-count">{activeFilterCount}</span>
             )}
             {showFilters ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
         </div>
 
-        {/* 8 Filters Collapsible Box (Requirement 8) */}
+        {/* Active filter pills when filter drawer is closed */}
+        {!showFilters && activeFilterCount > 0 && (
+          <div className="qb-active-filters">
+            <span className="qb-active-filters__label">{activeFilterCount} active</span>
+            <button className="qb-reset-link" onClick={resetFilters}>
+              <RotateCcw size={11} /> Clear all
+            </button>
+          </div>
+        )}
+
+        {/* Collapsible Filter Drawer */}
         {showFilters && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: '12px',
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: 8,
-              fontSize: 12,
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontWeight: 700, color: '#334155', textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.04em' }}>
-                Advanced Filters (All Optional)
-              </span>
+          <div className="qb-filter-drawer">
+            <div className="qb-filter-drawer__head">
+              <span>Filter Questions</span>
               {activeFilterCount > 0 && (
-                <button
-                  onClick={resetFilters}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#2563eb', fontSize: 11, cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontWeight: 600 }}
-                >
-                  <RotateCcw size={11} /> Reset All
+                <button className="qb-reset-link" onClick={resetFilters}>
+                  <RotateCcw size={11} /> Reset ({activeFilterCount})
                 </button>
               )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {/* 1. Course / Program / Board */}
+            <div className="qb-filter-grid">
               <div>
-                <label style={{ display: 'block', color: '#64748b', fontSize: 11, marginBottom: 2 }}>Course / Board</label>
-                <select
-                  style={{ width: '100%', padding: '4px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #cbd5e1', background: 'white', color: '#1e293b' }}
-                  value={courseFilter}
-                  onChange={(e) => setCourseFilter(e.target.value)}
-                >
-                  <option value="">All Courses / Boards</option>
-                  {filterOptions.courses.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
-              {/* 2. Subject */}
-              <div>
-                <label style={{ display: 'block', color: '#64748b', fontSize: 11, marginBottom: 2 }}>Subject</label>
-                <select
-                  style={{ width: '100%', padding: '4px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #cbd5e1', background: 'white', color: '#1e293b' }}
-                  value={subjectFilter}
-                  onChange={(e) => setSubjectFilter(e.target.value)}
-                >
+                <label>Subject</label>
+                <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
                   <option value="">All Subjects</option>
                   {filterOptions.subjects.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
 
-              {/* 3. Class */}
               <div>
-                <label style={{ display: 'block', color: '#64748b', fontSize: 11, marginBottom: 2 }}>Class</label>
-                <select
-                  style={{ width: '100%', padding: '4px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #cbd5e1', background: 'white', color: '#1e293b' }}
-                  value={classFilter}
-                  onChange={(e) => setClassFilter(e.target.value)}
-                >
+                <label>Class</label>
+                <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
                   <option value="">All Classes</option>
                   {filterOptions.classes.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
 
-              {/* 4. Marks */}
               <div>
-                <label style={{ display: 'block', color: '#64748b', fontSize: 11, marginBottom: 2 }}>Marks</label>
-                <select
-                  style={{ width: '100%', padding: '4px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #cbd5e1', background: 'white', color: '#1e293b' }}
-                  value={marksFilter}
-                  onChange={(e) => setMarksFilter(e.target.value)}
-                >
+                <label>Chapter</label>
+                <select value={chapterFilter} onChange={(e) => setChapterFilter(e.target.value)}>
+                  <option value="">All Chapters</option>
+                  {filterOptions.chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label>Topic</label>
+                <select value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)}>
+                  <option value="">All Topics</option>
+                  {filterOptions.topics.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label>Marks</label>
+                <select value={marksFilter} onChange={(e) => setMarksFilter(e.target.value)}>
                   <option value="">Any Marks</option>
                   {[1, 2, 3, 4, 5, 6, 8, 10].map(m => (
                     <option key={m} value={m}>{m} {m === 1 ? 'Mark' : 'Marks'}</option>
@@ -803,57 +755,32 @@ export default function QuestionBankSidebar({
                 </select>
               </div>
 
-              {/* 5. Chapter */}
               <div>
-                <label style={{ display: 'block', color: '#64748b', fontSize: 11, marginBottom: 2 }}>Chapter</label>
+                <label>Cognitive Level</label>
                 <select
-                  style={{ width: '100%', padding: '4px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #cbd5e1', background: 'white', color: '#1e293b' }}
-                  value={chapterFilter}
-                  onChange={(e) => setChapterFilter(e.target.value)}
-                >
-                  <option value="">All Chapters</option>
-                  {filterOptions.chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
-                </select>
-              </div>
-
-              {/* 6. Topic */}
-              <div>
-                <label style={{ display: 'block', color: '#64748b', fontSize: 11, marginBottom: 2 }}>Topic</label>
-                <select
-                  style={{ width: '100%', padding: '4px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #cbd5e1', background: 'white', color: '#1e293b' }}
-                  value={topicFilter}
-                  onChange={(e) => setTopicFilter(e.target.value)}
-                >
-                  <option value="">All Topics</option>
-                  {filterOptions.topics.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-
-              {/* 7. Category / Stream */}
-              <div>
-                <label style={{ display: 'block', color: '#64748b', fontSize: 11, marginBottom: 2 }}>Category / Stream</label>
-                <select
-                  style={{ width: '100%', padding: '4px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #cbd5e1', background: 'white', color: '#1e293b' }}
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                >
-                  <option value="">All Streams</option>
-                  {filterOptions.categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-              </div>
-
-              {/* 8. Cognitive Level */}
-              <div>
-                <label style={{ display: 'block', color: '#64748b', fontSize: 11, marginBottom: 2 }}>Cognitive Level</label>
-                <select
-                  style={{ width: '100%', padding: '4px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #cbd5e1', background: 'white', color: '#1e293b' }}
                   value={cognitiveFilter}
                   onChange={(e) => setCognitiveFilter(e.target.value as CognitiveLevel | '')}
                 >
-                  <option value="">All Cognitive Levels</option>
+                  <option value="">All Levels</option>
                   {COGNITIVE_LEVELS.map(cl => (
-                    <option key={cl.value} value={cl.value}>{cl.label}{cl.value === 'understand' ? ' (Default)' : ''}</option>
+                    <option key={cl.value} value={cl.value}>{cl.label}</option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label>Course / Board</label>
+                <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+                  <option value="">All Boards</option>
+                  {filterOptions.courses.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label>Stream</label>
+                <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+                  <option value="">All Streams</option>
+                  {filterOptions.categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </div>
             </div>
@@ -861,172 +788,74 @@ export default function QuestionBankSidebar({
         )}
       </div>
 
-      {/* Context info banner */}
-      {(paperSubjectName || paperClassName) && (
-        <div style={{ padding: '6px 16px', background: '#eff6ff', borderBottom: '1px solid #dbeafe', fontSize: 11, color: '#1e40af', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>
-            Active Paper: <strong>{paperSubjectName || 'Subject'}</strong> {paperClassName ? `(${paperClassName})` : ''}
-          </span>
-          {activeFilterCount > 0 && (
-            <span style={{ fontSize: 10, color: '#2563eb', fontWeight: 600 }}>
-              {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
-            </span>
-          )}
-        </div>
-      )}
-
       {/* Questions list */}
       <div className="qb-list">
         {tab === 'shared' ? (
           filteredShared.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 16px', color: '#64748b', fontSize: 13 }}>
-              No shared questions match the criteria. Try adjusting your filters.
+            <div className="qb-empty">
+              <div className="qb-empty__title">No matching questions</div>
+              <div className="qb-empty__desc">Try adjusting your search or clearing active filters.</div>
+              {activeFilterCount > 0 && (
+                <button className="qb-btn-ghost" onClick={resetFilters} style={{ marginTop: 8 }}>
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : (
             filteredShared.map((q) => {
-              const cognitiveBadgeColor =
-                q.cognitiveLevel === 'remember' ? { bg: '#fef3c7', text: '#92400e' } :
-                q.cognitiveLevel === 'understand' ? { bg: '#e0f2fe', text: '#0369a1' } :
-                q.cognitiveLevel === 'apply' ? { bg: '#dcfce7', text: '#15803d' } :
-                q.cognitiveLevel === 'analyse' ? { bg: '#f3e8ff', text: '#7e22ce' } :
-                q.cognitiveLevel === 'evaluate' ? { bg: '#ffedd5', text: '#c2410c' } :
-                { bg: '#fee2e2', text: '#b91c1c' };
-
               const subqs = q.subquestions || [];
               const hasSubquestions = subqs.length > 0;
               const totalAllocatedMarks = hasSubquestions
                 ? subqs.reduce((acc, s) => acc + (s.marks || 1), 0)
                 : (q.marks !== undefined ? q.marks : 1);
 
+              const contextCrumb = [q.chapter, q.topic !== q.chapter ? q.topic : undefined, q.subjectName]
+                .filter(Boolean)
+                .slice(0, 2)
+                .join(' · ');
+
               return (
                 <div
                   key={q.id}
-                  className="qb-card"
-                  style={{ cursor: hasSubquestions ? 'pointer' : 'default' }}
+                  className={`qb-card ${hasSubquestions ? 'is-multipart' : ''}`}
                   onClick={() => {
                     if (hasSubquestions) {
                       setSelectedParentModal({ question: q, isShared: true });
                     }
                   }}
                 >
-                  <div className="qb-card-header" style={{ flexWrap: 'wrap', gap: 4 }}>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          background: '#f1f5f9',
-                          color: '#334155',
-                          borderRadius: 4,
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        {q.questionType}
+                  {/* Row 1: Clean single-line meta header */}
+                  <div className="qb-card-meta">
+                    <div className="qb-card-meta__left">
+                      <span className="qb-type-pill">
+                        {formatQuestionType(q.questionType)}
                       </span>
-
-                      {/* Cognitive Level badge */}
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          background: cognitiveBadgeColor.bg,
-                          color: cognitiveBadgeColor.text,
-                          borderRadius: 4,
-                          textTransform: 'capitalize',
-                        }}
-                        title={`Cognitive Level: ${q.cognitiveLevel || 'Understand'}`}
-                      >
-                        {q.cognitiveLevel || 'Understand'}
-                      </span>
-
-                      {q.marks !== undefined && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: '2px 5px',
-                            background: '#e2e8f0',
-                            color: '#1e293b',
-                            borderRadius: 4,
-                          }}
-                        >
-                          {q.marks}m
-                        </span>
-                      )}
-
-                      {q.chapter && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            padding: '2px 6px',
-                            background: '#e0e7ff',
-                            color: '#3730a3',
-                            borderRadius: 4,
-                          }}
-                          title={`Chapter: ${q.chapter}`}
-                        >
-                          Ch: {q.chapter}
-                        </span>
-                      )}
-
-                      {q.topic && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            padding: '2px 6px',
-                            background: '#f1f5f9',
-                            color: '#475569',
-                            borderRadius: 4,
-                          }}
-                          title={`Topic: ${q.topic}`}
-                        >
-                          {q.topic}
-                        </span>
-                      )}
-
-                      {q.category && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            padding: '2px 6px',
-                            background: '#fef3c7',
-                            color: '#92400e',
-                            borderRadius: 4,
-                          }}
-                          title={`Stream / Category: ${q.category}`}
-                        >
-                          {q.category}
+                      {contextCrumb && (
+                        <span className="qb-context-crumb" title={contextCrumb}>
+                          {contextCrumb}
                         </span>
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {hasSubquestions && (
-                        <span className="qb-subq-badge">
-                          {subqs.length} subquestions
+                    <div className="qb-card-meta__right">
+                      {hasSubquestions ? (
+                        <span className="qb-parts-pill">
+                          <Layers size={11} />
+                          {subqs.length} {subqs.length === 1 ? 'part' : 'parts'} · {totalAllocatedMarks}m
                         </span>
-                      )}
-                      {q.usageCount > 0 && (
-                        <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 600 }}>
-                          {q.usageCount} uses
+                      ) : (
+                        <span className="qb-marks-pill">
+                          {totalAllocatedMarks}m
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Render content with LaTeX math */}
+                  {/* Row 2: Question Content */}
                   <div
                     className="qb-card-body tex2jax_process"
                     dangerouslySetInnerHTML={{ __html: preprocessMathHtml(q.content) }}
                   />
-
-                  {hasSubquestions && (
-                    <div className="qb-total-marks-label">
-                      (Total Marks: {totalAllocatedMarks})
-                    </div>
-                  )}
 
                   {q.questionType === 'mcq' && q.options && q.options.length > 0 && (
                     <div className="qb-card-options tex2jax_process">
@@ -1039,26 +868,45 @@ export default function QuestionBankSidebar({
                     </div>
                   )}
 
+                  {/* Row 3: Calm Footer + Action */}
                   <div className="qb-card-actions">
-                    <span className="qb-author-badge">
-                      <UserIcon size={11} /> {q.authorName}
-                    </span>
+                    <div className="qb-card-submeta">
+                      <span className="qb-cog-tag" title={`Cognitive Level: ${q.cognitiveLevel || 'Understand'}`}>
+                        <i style={{ background: cognitiveDotColor(q.cognitiveLevel) }} />
+                        {q.cognitiveLevel || 'Understand'}
+                      </span>
+                      {q.authorName && (
+                        <>
+                          <span className="qb-submeta-dot">·</span>
+                          <span className="qb-author-badge" title={`Author: ${q.authorName}`}>
+                            <UserIcon size={11} />
+                            {q.authorName}
+                          </span>
+                        </>
+                      )}
+                      {q.usageCount > 0 && (
+                        <>
+                          <span className="qb-submeta-dot">·</span>
+                          <span className="qb-usage-text">{q.usageCount} uses</span>
+                        </>
+                      )}
+                    </div>
+
                     {hasSubquestions ? (
                       <button
-                        className="btn btn-primary qb-manage-subq-btn"
+                        className="qb-manage-subq-btn"
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedParentModal({ question: q, isShared: true });
                         }}
-                        title="Manage Subquestions"
+                        title="Select parts to insert"
                       >
-                        <Layers size={12} /> Manage Subquestions
+                        <Layers size={12} /> Select parts
                       </button>
                     ) : (
-                      <div style={{ display: 'flex', gap: 6 }}>
+                      <div className="qb-action-pair">
                         <button
-                          className="btn btn-secondary"
-                          style={{ padding: '4px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                          className="qb-btn-icon"
                           onClick={(e) => {
                             e.stopPropagation();
                             onViewQuestion({
@@ -1067,13 +915,12 @@ export default function QuestionBankSidebar({
                               targetSection: sections?.[0]?.title,
                             });
                           }}
-                          title="View Full Question"
+                          title="Preview full question"
                         >
-                          <Eye size={12} /> View
+                          <Eye size={13} />
                         </button>
                         <button
-                          className="btn btn-primary"
-                          style={{ padding: '4px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                          className="qb-btn-insert"
                           onClick={(e) => {
                             e.stopPropagation();
                             onInsertSharedQuestion(
@@ -1081,9 +928,9 @@ export default function QuestionBankSidebar({
                               sections?.[0]?.title
                             );
                           }}
-                          title="Add to Paper"
+                          title="Insert into paper"
                         >
-                          <Plus size={12} /> Add
+                          <Plus size={13} /> Insert
                         </button>
                       </div>
                     )}
@@ -1093,21 +940,15 @@ export default function QuestionBankSidebar({
             })
           )
         ) : filteredMy.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 16px', color: '#64748b', fontSize: 13 }}>
-            No questions found in your library matching the criteria.
+          <div className="qb-empty">
+            <div className="qb-empty__title">No questions in your library</div>
+            <div className="qb-empty__desc">Questions you create in your papers will appear here.</div>
           </div>
         ) : (
           filteredMy.map((q) => {
             const chName = chapters.find(c => c.id === q.chapterId)?.name;
             const tpName = topics.find(t => t.id === q.topicId)?.name;
             const catName = categories.find(cat => cat.id === q.categoryId)?.name;
-            const cognitiveBadgeColor =
-              q.cognitiveLevel === 'remember' ? { bg: '#fef3c7', text: '#92400e' } :
-              q.cognitiveLevel === 'understand' ? { bg: '#e0f2fe', text: '#0369a1' } :
-              q.cognitiveLevel === 'apply' ? { bg: '#dcfce7', text: '#15803d' } :
-              q.cognitiveLevel === 'analyse' ? { bg: '#f3e8ff', text: '#7e22ce' } :
-              q.cognitiveLevel === 'evaluate' ? { bg: '#ffedd5', text: '#c2410c' } :
-              { bg: '#fee2e2', text: '#b91c1c' };
 
             const subqs = q.subquestions || [];
             const hasSubquestions = subqs.length > 0;
@@ -1115,87 +956,53 @@ export default function QuestionBankSidebar({
               ? subqs.reduce((acc, s) => acc + (s.marks || 1), 0)
               : (q.marks !== undefined ? q.marks : 1);
 
+            const contextCrumb = [chName, tpName !== chName ? tpName : undefined, catName]
+              .filter(Boolean)
+              .slice(0, 2)
+              .join(' · ');
+
             return (
               <div
                 key={q.id}
-                className="qb-card"
-                style={{ cursor: hasSubquestions ? 'pointer' : 'default' }}
+                className={`qb-card ${hasSubquestions ? 'is-multipart' : ''}`}
                 onClick={() => {
                   if (hasSubquestions) {
                     setSelectedParentModal({ question: q, isShared: false });
                   }
                 }}
               >
-                <div className="qb-card-header" style={{ flexWrap: 'wrap', gap: 4 }}>
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: '2px 6px',
-                        background: '#e0e7ff',
-                        color: '#3730a3',
-                        borderRadius: 4,
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {q.questionType}
+                {/* Row 1: Clean single-line meta header */}
+                <div className="qb-card-meta">
+                  <div className="qb-card-meta__left">
+                    <span className="qb-type-pill">
+                      {formatQuestionType(q.questionType)}
                     </span>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: '2px 6px',
-                        background: cognitiveBadgeColor.bg,
-                        color: cognitiveBadgeColor.text,
-                        borderRadius: 4,
-                        textTransform: 'capitalize',
-                      }}
-                    >
-                      {q.cognitiveLevel || 'Understand'}
-                    </span>
-                    {q.marks !== undefined && (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 5px', background: '#e2e8f0', color: '#1e293b', borderRadius: 4 }}>
-                        {q.marks}m
-                      </span>
-                    )}
-                    {chName && (
-                      <span style={{ fontSize: 10, padding: '2px 6px', background: '#e0e7ff', color: '#3730a3', borderRadius: 4 }}>
-                        Ch: {chName}
-                      </span>
-                    )}
-                    {tpName && (
-                      <span style={{ fontSize: 10, padding: '2px 6px', background: '#f1f5f9', color: '#475569', borderRadius: 4 }}>
-                        {tpName}
-                      </span>
-                    )}
-                    {catName && (
-                      <span style={{ fontSize: 10, padding: '2px 6px', background: '#fef3c7', color: '#92400e', borderRadius: 4 }}>
-                        {catName}
+                    {contextCrumb && (
+                      <span className="qb-context-crumb" title={contextCrumb}>
+                        {contextCrumb}
                       </span>
                     )}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {hasSubquestions && (
-                      <span className="qb-subq-badge">
-                        {subqs.length} subquestions
+
+                  <div className="qb-card-meta__right">
+                    {hasSubquestions ? (
+                      <span className="qb-parts-pill">
+                        <Layers size={11} />
+                        {subqs.length} {subqs.length === 1 ? 'part' : 'parts'} · {totalAllocatedMarks}m
+                      </span>
+                    ) : (
+                      <span className="qb-marks-pill">
+                        {totalAllocatedMarks}m
                       </span>
                     )}
-                    <span style={{ fontSize: 10, color: '#64748b' }}>{q.difficulty}</span>
                   </div>
                 </div>
 
-                {/* Render content with LaTeX math */}
+                {/* Row 2: Question Content */}
                 <div
                   className="qb-card-body tex2jax_process"
                   dangerouslySetInnerHTML={{ __html: preprocessMathHtml(q.content) }}
                 />
-
-                {hasSubquestions && (
-                  <div className="qb-total-marks-label">
-                    (Total Marks: {totalAllocatedMarks})
-                  </div>
-                )}
 
                 {q.questionType === 'mcq' && q.options && q.options.length > 0 && (
                   <div className="qb-card-options tex2jax_process">
@@ -1208,24 +1015,32 @@ export default function QuestionBankSidebar({
                   </div>
                 )}
 
+                {/* Row 3: Calm Footer + Action */}
                 <div className="qb-card-actions">
-                  <span style={{ fontSize: 11, color: '#64748b' }}>Your question</span>
+                  <div className="qb-card-submeta">
+                    <span className="qb-cog-tag" title={`Cognitive Level: ${q.cognitiveLevel || 'Understand'}`}>
+                      <i style={{ background: cognitiveDotColor(q.cognitiveLevel) }} />
+                      {q.cognitiveLevel || 'Understand'}
+                    </span>
+                    <span className="qb-submeta-dot">·</span>
+                    <span style={{ textTransform: 'capitalize' }}>{q.difficulty}</span>
+                  </div>
+
                   {hasSubquestions ? (
                     <button
-                      className="btn btn-primary qb-manage-subq-btn"
+                      className="qb-manage-subq-btn"
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedParentModal({ question: q, isShared: false });
                       }}
-                      title="Manage Subquestions"
+                      title="Select parts to insert"
                     >
-                      <Layers size={12} /> Manage Subquestions
+                      <Layers size={12} /> Select parts
                     </button>
                   ) : (
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div className="qb-action-pair">
                       <button
-                        className="btn btn-secondary"
-                        style={{ padding: '4px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                        className="qb-btn-icon"
                         onClick={(e) => {
                           e.stopPropagation();
                           onViewQuestion({
@@ -1234,13 +1049,12 @@ export default function QuestionBankSidebar({
                             targetSection: sections?.[0]?.title,
                           });
                         }}
-                        title="View Full Question"
+                        title="Preview full question"
                       >
-                        <Eye size={12} /> View
+                        <Eye size={13} />
                       </button>
                       <button
-                        className="btn btn-primary"
-                        style={{ padding: '4px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                        className="qb-btn-insert"
                         onClick={(e) => {
                           e.stopPropagation();
                           onInsertMyQuestion(
@@ -1248,9 +1062,9 @@ export default function QuestionBankSidebar({
                             sections?.[0]?.title
                           );
                         }}
-                        title="Add to Paper"
+                        title="Insert into paper"
                       >
-                        <Plus size={12} /> Add
+                        <Plus size={13} /> Insert
                       </button>
                     </div>
                   )}
