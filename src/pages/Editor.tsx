@@ -2060,6 +2060,26 @@ export default function Editor() {
     setDraftType('subjective');
   };
 
+  const handleOpenAddQuestion = () => {
+    if (sections.length > 0 && !draftSection) setDraftSection(sections[0].id);
+    if (!draftType) setDraftType('subjective');
+    setEditingQuestionId(null);
+    setEditingPQId(null);
+    setDraftContent('');
+    setDraftOptions(['', '', '', '']);
+    setDraftSubquestions([]);
+    setDraftCourseId(paper?.courseId || '');
+    setDraftSubjectId(paper?.subjectId || '');
+    setDraftCognitiveLevel(DEFAULT_COGNITIVE_LEVEL);
+    setDraftChapterId('');
+    setDraftTopicId('');
+    setDraftCategoryId('');
+    setDraftSubNumberingStyle('');
+    setQParentId('');
+    setActiveView('add-question');
+    setIsConstructorOpen(true);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id && id) {
@@ -3007,47 +3027,6 @@ export default function Editor() {
               width: `${paper.headerConfig.logoSize || 80}px`,
             }}
           />
-        </>
-      )}
-
-      {paper.qpCode && (
-        <>
-          <Rnd
-            position={paper.headerConfig?.barcodePos || { x: 550, y: 20 }}
-            onDragStop={(_e, d) => { void handleUpdateHeaderConfig({ barcodePos: { x: d.x, y: d.y } }); }}
-            bounds="parent"
-            enableResizing={false}
-            className="no-print-handles"
-          >
-            <div className="barcode-wrapper" style={{ position: 'relative' }}>
-              <div className="barcode-text">QP Code: {paper.qpCode}</div>
-              <button
-                onClick={() => updateQuestionPaper(paper.id, { qpCode: '' })}
-                className="hide-on-print"
-                style={{
-                  position: 'absolute', top: -10, right: -10,
-                  background: 'var(--danger-color, #ef4444)', color: 'white',
-                  borderRadius: '50%', width: 20, height: 20,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  border: 'none', cursor: 'pointer', fontSize: 12, padding: 0
-                }}
-                title="Remove QP Code"
-              >
-                ✕
-              </button>
-            </div>
-          </Rnd>
-
-          <div
-            className="barcode-print-only"
-            style={{
-              position: 'absolute',
-              left: `${paper.headerConfig?.barcodePos?.x || 550}px`,
-              top: `${paper.headerConfig?.barcodePos?.y || 20}px`,
-            }}
-          >
-            <div className="barcode-text">QP Code: {paper.qpCode}</div>
-          </div>
         </>
       )}
 
@@ -4594,18 +4573,6 @@ export default function Editor() {
                 onChange={(e) => updateQuestionPaper(paper.id, { title: e.target.value })}
               />
             </div>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <div className="property-field" style={{ flex: 1 }}>
-                <label className="property-label">QP Code</label>
-                <input
-                  type="text"
-                  className="property-input"
-                  value={paper.qpCode || ''}
-                  onChange={(e) => updateQuestionPaper(paper.id, { qpCode: e.target.value })}
-                  placeholder="Enter QP Code..."
-                />
-              </div>
-            </div>
 
             <div className="drawer-section-divider">Typography & Sizing</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -5173,6 +5140,18 @@ export default function Editor() {
           }}
         />
       )}
+
+      {/* Floating Action Button (FAB) to Add Question */}
+      <button
+        type="button"
+        className="editor-fab-add-question hide-on-print"
+        onClick={handleOpenAddQuestion}
+        title="Add Question"
+        aria-label="Add Question"
+      >
+        <Plus size={18} />
+        <span>Add Question</span>
+      </button>
 
       {showToast && (
         <div className="toast-notification">

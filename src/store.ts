@@ -167,9 +167,21 @@ interface AppState {
   createQuestionPaper: (title: string, date?: string, maxMarks?: number, courseId?: string, subjectId?: string, classId?: string, instructions?: string, duration?: number) => Promise<string>;
   updateQuestionPaper: (id: string, updates: Partial<QuestionPaper>) => Promise<void>;
   deleteQuestionPaper: (id: string) => Promise<void>;
-  duplicateQuestionPaper: (id: string) => string;
+  duplicateQuestionPaper: (id: string) => Promise<string>;
   
-  createQuestion: (content: string, questionType: QuestionType, options?: string[], courseId?: string, subjectId?: string, classId?: string, difficulty?: Difficulty, explanation?: string, imageUrl?: string) => Promise<string>;
+  createQuestion: (
+    content: string,
+    questionType: QuestionType,
+    options?: string[],
+    courseId?: string,
+    subjectId?: string,
+    classId?: string,
+    difficulty?: Difficulty,
+    explanation?: string,
+    imageUrl?: string,
+    meta?: QuestionMeta,
+    marks?: number
+  ) => Promise<string>;
   updateQuestion: (id: string, updates: Partial<Question>) => Promise<void>;
   deleteQuestion: (id: string) => Promise<void>;
   
@@ -764,7 +776,6 @@ export const useStore = create<AppState>()((set, get) => ({
     const id = generateId();
     const newPaper: QuestionPaper = {
       id,
-      qpCode: '',
       teacherId: user.id,
       title,
       date,
@@ -836,27 +847,135 @@ export const useStore = create<AppState>()((set, get) => ({
     await supabase.from('qp_metadata').delete().eq('id', id);
   },
 
-  duplicateQuestionPaper: (id: string) => {
-    const paper = get().questionPapers.find(qp => qp.id === id);
+  duplicateQuestionPaper: async (id: string) => {
+    const { user, questionPapers, paperQuestions } = get();
+    const paper = questionPapers.find(qp => qp.id === id);
     if (!paper) return '';
     const newId = generateId();
     const newPaper: QuestionPaper = {
       ...paper,
       id: newId,
       title: `${paper.title} (Copy)`,
-      qpCode: '',
       isPublished: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    set((state) => ({ questionPapers: [newPaper, ...state.questionPapers] }));
+
+    // Make sure we have the paper's questions
+    let srcPqs = paperQuestions.get(id);
+    if (!srcPqs || srcPqs.length === 0) {
+      const { data } = await supabase
+        .from('paper_questions')
+        .select('*')
+        .eq('paper_id', id)
+        .order('order_index', { ascending: true });
+      if (data && data.length > 0) {
+        srcPqs = data.map(item => ({
+          id: item.id,
+          paperId: item.paper_id,
+          questionId: item.question_id,
+          section: item.section,
+          orderIndex: item.order_index,
+          marks: item.marks,
+          parentId: item.parent_id,
+          isOptional: item.is_optional,
+          subNumberingStyle: item.sub_numbering_style,
+          originType: item.origin_type,
+          parentSharedId: item.parent_shared_id,
+          createdAt: item.created_at ? new Date(item.created_at).getTime() : Date.now(),
+          updatedAt: item.updated_at ? new Date(item.updated_at).getTime() : Date.now(),
+        }));
+      } else {
+        srcPqs = [];
+      }
+    }
+
+    // Clone all paper questions with new IDs, preserving hierarchy (oldId -> newId)
+    const oldToNewMap = new Map<string, string>();
+    srcPqs.forEach(pq => {
+      oldToNewMap.set(pq.id, generateId());
+    });
+
+    const newPqs: PaperQuestion[] = srcPqs.map(pq => ({
+      ...pq,
+      id: oldToNewMap.get(pq.id)!,
+      paperId: newId,
+      parentId: pq.parentId ? oldToNewMap.get(pq.parentId) : undefined,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+
+    const newPaperQuestionsMap = new Map(paperQuestions);
+    newPaperQuestionsMap.set(newId, newPqs);
+
+    set((state) => ({
+      questionPapers: [newPaper, ...state.questionPapers],
+      paperQuestions: newPaperQuestionsMap,
+    }));
+
+    // Insert into Supabase qp_metadata
+    const { error: metaError } = await supabase.from('qp_metadata').insert({
+      id: newId,
+      teacher_id: user?.id || paper.teacherId,
+      title: newPaper.title,
+      date: paper.date,
+      max_marks: paper.maxMarks,
+      course_id: paper.courseId,
+      subject_id: paper.subjectId,
+      class_id: paper.classId,
+      instructions: paper.instructions || '',
+      is_published: false,
+      duration: paper.duration,
+      header_config: paper.headerConfig || {},
+    });
+
+    if (metaError) {
+      console.error('Failed to duplicate paper in Supabase:', metaError.message);
+    }
+
+    // Insert new paper questions if any
+    if (newPqs.length > 0) {
+      const rows = newPqs.map(npq => ({
+        id: npq.id,
+        paper_id: newId,
+        question_id: npq.questionId,
+        section: npq.section || '',
+        order_index: npq.orderIndex,
+        marks: npq.marks,
+        parent_id: npq.parentId || null,
+        is_optional: npq.isOptional || false,
+        sub_numbering_style: npq.subNumberingStyle || null,
+        origin_type: npq.originType || 'ORIGINAL',
+        parent_shared_id: npq.parentSharedId || null,
+      }));
+      const { error: pqError } = await supabase.from('paper_questions').insert(rows);
+      if (pqError) {
+        console.error('Failed to duplicate paper questions in Supabase:', pqError.message);
+      }
+    }
+
     return newId;
   },
 
-  createQuestion: async (content: string, questionType: QuestionType, options?: string[], courseId?: string, subjectId?: string, classId?: string, difficulty?: Difficulty, explanation?: string, imageUrl?: string) => {
-    const { user } = get();
+  createQuestion: async (
+    content: string,
+    questionType: QuestionType,
+    options?: string[],
+    courseId?: string,
+    subjectId?: string,
+    classId?: string,
+    difficulty?: Difficulty,
+    explanation?: string,
+    imageUrl?: string,
+    meta?: QuestionMeta,
+    marks?: number
+  ) => {
+    const { user, shareQuestionToBank } = get();
     if (!user?.id) return '';
     const id = generateId();
+    const finalMarks = questionType === 'text' ? 0 : (marks ?? 1);
+    const resolvedCognitive = meta?.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL;
+
     const newQuestion: Question = {
       id,
       teacherId: user.id,
@@ -869,23 +988,46 @@ export const useStore = create<AppState>()((set, get) => ({
       difficulty: difficulty || 'medium',
       explanation,
       imageUrl,
+      chapterId: meta?.chapterId,
+      topicId: meta?.topicId,
+      categoryId: meta?.categoryId,
+      cognitiveLevel: resolvedCognitive,
+      marks: finalMarks,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
     set((state) => ({ questions: [newQuestion, ...state.questions] }));
 
-    await supabase.from('questions').insert({
+    await resilientWrite((row) => supabase.from('questions').insert(row), {
       id,
       teacher_id: user.id,
       content,
-      course_id: courseId,
-      subject_id: subjectId,
-      class_id: classId,
+      course_id: courseId || null,
+      subject_id: subjectId || null,
+      class_id: classId || null,
       question_type: questionType,
       options: options || [],
       difficulty: difficulty || 'medium',
-    });
+      chapter_id: meta?.chapterId || null,
+      topic_id: meta?.topicId || null,
+      category_id: meta?.categoryId || null,
+      cognitive_level: resolvedCognitive,
+      marks: finalMarks,
+      explanation,
+      image_url: imageUrl,
+    }, 'createQuestion');
+
+    if (!user.keepQuestionsPrivate && content.trim().length > 10) {
+      void shareQuestionToBank({
+        content,
+        questionType,
+        options,
+        difficulty: difficulty || 'medium',
+        meta: { ...meta, courseId, subjectId, classId, cognitiveLevel: resolvedCognitive },
+        marks: finalMarks,
+      });
+    }
 
     return id;
   },

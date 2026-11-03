@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search, Library, Users, PenLine, Share2, Info, SearchX, Layers, TrendingUp, X, Filter, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { Search, Library, Users, PenLine, Share2, Info, SearchX, Layers, TrendingUp, X, Filter, ChevronDown, ChevronUp, RotateCcw, Plus, Check, Trash2, Loader2 } from 'lucide-react';
 import type { Difficulty, QuestionType, CognitiveLevel } from '../../types';
 import { COGNITIVE_LEVELS } from '../../types';
 import { useStore } from '../../store';
@@ -50,7 +50,24 @@ const COGNITIVE_COLOR_MAP: Record<CognitiveLevel, string> = {
 };
 
 export default function QuestionBank() {
-  const { user, questions, sharedQuestions, courses, subjects, classes, chapters, topics, categories } = useStore();
+  const {
+    user,
+    questions,
+    sharedQuestions,
+    questionPapers,
+    courses,
+    subjects,
+    classes,
+    chapters,
+    topics,
+    categories,
+    createQuestion,
+    addQuestionToPaper,
+    importSharedQuestionToPaper,
+    createChapter,
+    createTopic,
+    createCategory,
+  } = useStore();
   const [params, setParams] = useSearchParams();
   const tab = (params.get('tab') as Tab) || 'community';
 
@@ -72,6 +89,134 @@ export default function QuestionBank() {
 
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [viewing, setViewing] = useState<BankItem | null>(null);
+
+  // Add Question Dialog State
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [newContent, setNewContent] = useState('');
+  const [newType, setNewType] = useState<QuestionType>('subjective');
+  const [newOptions, setNewOptions] = useState<string[]>(['', '', '', '']);
+  const [newMarks, setNewMarks] = useState<number>(1);
+  const [newDifficulty, setNewDifficulty] = useState<Difficulty>('medium');
+  const [newCognitiveLevel, setNewCognitiveLevel] = useState<CognitiveLevel>('understand');
+  const [newCourseId, setNewCourseId] = useState('');
+  const [newSubjectId, setNewSubjectId] = useState('');
+  const [newClassId, setNewClassId] = useState('');
+  const [newChapter, setNewChapter] = useState('');
+  const [newTopic, setNewTopic] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [isCreatingQuestion, setIsCreatingQuestion] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  // Add to Paper State (for preview modal)
+  const [targetPaperId, setTargetPaperId] = useState('');
+  const [targetSection, setTargetSection] = useState('');
+  const [addedMessage, setAddedMessage] = useState<string | null>(null);
+  const [isAddingToPaper, setIsAddingToPaper] = useState(false);
+
+  const resetAddForm = () => {
+    setNewContent('');
+    setNewType('subjective');
+    setNewOptions(['', '', '', '']);
+    setNewMarks(1);
+    setNewDifficulty('medium');
+    setNewCognitiveLevel('understand');
+    setNewCourseId('');
+    setNewSubjectId('');
+    setNewClassId('');
+    setNewChapter('');
+    setNewTopic('');
+    setNewCategory('');
+    setCreateError('');
+  };
+
+  const handleSaveNewQuestion = async () => {
+    if (!newContent.trim()) {
+      setCreateError('Please enter question content.');
+      return;
+    }
+    if (newType === 'mcq') {
+      const validOpts = newOptions.filter((o) => o.trim());
+      if (validOpts.length < 2) {
+        setCreateError('Please provide at least 2 options for multiple choice questions.');
+        return;
+      }
+    }
+
+    setIsCreatingQuestion(true);
+    setCreateError('');
+    try {
+      let resolvedChapterId = chapters.find((c) => c.name.toLowerCase() === newChapter.trim().toLowerCase())?.id;
+      if (!resolvedChapterId && newChapter.trim()) {
+        resolvedChapterId = await createChapter(newChapter.trim(), newSubjectId || undefined);
+      }
+
+      let resolvedTopicId = topics.find((t) => t.name.toLowerCase() === newTopic.trim().toLowerCase())?.id;
+      if (!resolvedTopicId && newTopic.trim()) {
+        resolvedTopicId = await createTopic(newTopic.trim(), resolvedChapterId || undefined);
+      }
+
+      let resolvedCategoryId = categories.find((c) => c.name.toLowerCase() === newCategory.trim().toLowerCase())?.id;
+      if (!resolvedCategoryId && newCategory.trim()) {
+        resolvedCategoryId = await createCategory(newCategory.trim());
+      }
+
+      await createQuestion(
+        newContent.trim(),
+        newType,
+        newType === 'mcq' ? newOptions.map((o) => o.trim()).filter(Boolean) : undefined,
+        newCourseId || undefined,
+        newSubjectId || undefined,
+        newClassId || undefined,
+        newDifficulty,
+        undefined,
+        undefined,
+        {
+          courseId: newCourseId || undefined,
+          subjectId: newSubjectId || undefined,
+          classId: newClassId || undefined,
+          chapterId: resolvedChapterId,
+          topicId: resolvedTopicId,
+          categoryId: resolvedCategoryId,
+          cognitiveLevel: newCognitiveLevel,
+        },
+        newMarks
+      );
+
+      setIsAddOpen(false);
+      resetAddForm();
+      setTab('mine');
+    } catch (err: any) {
+      console.error(err);
+      setCreateError(err.message || 'Failed to save question.');
+    } finally {
+      setIsCreatingQuestion(false);
+    }
+  };
+
+  const handleAddToPaper = async () => {
+    if (!targetPaperId || !viewing) return;
+    setIsAddingToPaper(true);
+    try {
+      if (tab === 'community' || !questions.some((q) => q.id === viewing.id)) {
+        const sharedQ = sharedQuestions.find((sq) => sq.id === viewing.id);
+        if (sharedQ) {
+          await importSharedQuestionToPaper(targetPaperId, sharedQ, targetSection, viewing.marks || 1);
+        } else {
+          await addQuestionToPaper(targetPaperId, viewing.id, targetSection, viewing.marks || 1);
+        }
+      } else {
+        await addQuestionToPaper(targetPaperId, viewing.id, targetSection, viewing.marks || 1);
+      }
+      const paperName = questionPapers.find((p) => p.id === targetPaperId)?.title || 'paper';
+      setAddedMessage(`Question successfully added to "${paperName}"!`);
+      setTimeout(() => setAddedMessage(null), 5000);
+    } catch (e: any) {
+      console.error(e);
+      setAddedMessage(e.message || 'Failed to add question to paper.');
+    } finally {
+      setIsAddingToPaper(false);
+    }
+  };
 
   const resetAllFilters = () => {
     setSearch('');
@@ -260,6 +405,15 @@ export default function QuestionBank() {
       <PageHeader
         title="Question Bank"
         description="Browse questions written by you and by teachers across QuestForma."
+        actions={
+          <button
+            type="button"
+            className="qf-btn qf-btn--primary"
+            onClick={() => { resetAddForm(); setIsAddOpen(true); }}
+          >
+            <Plus size={16} /> Add question
+          </button>
+        }
       />
 
       <div className="qf-callout">
@@ -568,10 +722,21 @@ export default function QuestionBank() {
             title={tab === 'mine' ? 'No questions yet' : tab === 'contributions' ? 'You haven’t shared any questions yet' : 'The community bank is empty'}
             description={
               tab === 'mine'
-                ? 'Questions you write in the editor are saved here automatically.'
+                ? 'Questions you write in the editor or add here are saved in your Question Bank.'
                 : tab === 'contributions'
                   ? 'Questions you write are shared with other teachers automatically, unless you keep them private in Settings.'
                   : 'Check back soon as teachers add questions.'
+            }
+            action={
+              tab === 'mine' ? (
+                <button
+                  type="button"
+                  className="qf-btn qf-btn--primary"
+                  onClick={() => { resetAddForm(); setIsAddOpen(true); }}
+                >
+                  <Plus size={15} /> Add question
+                </button>
+              ) : undefined
             }
           />
         </div>
@@ -648,8 +813,280 @@ export default function QuestionBank() {
             {viewing.author && (
               <p className="qf-q-view__by">Contributed by <strong>{viewing.author}</strong> · used {viewing.usageCount || 0} times</p>
             )}
+
+            {questionPapers.length > 0 && (
+              <div className="qf-q-add-to-paper-box">
+                <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--qf-text-3)' }}>
+                  Add to a Test Paper
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <select
+                    className="qf-input qf-select qf-select--sm"
+                    style={{ minWidth: 200, flex: 1 }}
+                    value={targetPaperId}
+                    onChange={(e) => setTargetPaperId(e.target.value)}
+                  >
+                    <option value="">Select paper...</option>
+                    {questionPapers.map((p) => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    className="qf-input qf-input--sm"
+                    style={{ width: 140 }}
+                    placeholder="Section (optional)"
+                    value={targetSection}
+                    onChange={(e) => setTargetSection(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="qf-btn qf-btn--primary qf-btn--sm"
+                    disabled={!targetPaperId || isAddingToPaper}
+                    onClick={handleAddToPaper}
+                  >
+                    {isAddingToPaper ? <Loader2 size={13} className="qf-spin" /> : <Plus size={13} />}
+                    {isAddingToPaper ? 'Adding...' : 'Add to paper'}
+                  </button>
+                </div>
+                {addedMessage && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: 12.5, color: 'var(--qf-success, #16a34a)', fontWeight: 500 }}>
+                    <Check size={14} />
+                    <span>{addedMessage}</span>
+                    {targetPaperId && (
+                      <button
+                        type="button"
+                        className="qf-btn qf-btn--ghost qf-btn--sm"
+                        style={{ padding: '2px 8px', fontSize: 12, height: 24, marginLeft: 'auto' }}
+                        onClick={() => window.open(`/editor/${targetPaperId}`, '_blank')}
+                      >
+                        Open paper in new window →
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
+      </Dialog>
+
+      {/* Create / Add Question Dialog */}
+      <Dialog open={isAddOpen} onClose={() => setIsAddOpen(false)} size="lg" title="Add Question to Question Bank">
+        <form
+          className="qf-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSaveNewQuestion();
+          }}
+        >
+          {createError && <div className="qf-form__error">{createError}</div>}
+
+          {/* Question Type */}
+          <div className="qf-field">
+            <label className="qf-label">Question Type</label>
+            <select
+              className="qf-input qf-select"
+              value={newType}
+              onChange={(e) => setNewType(e.target.value as QuestionType)}
+            >
+              {Object.entries(QUESTION_TYPE_LABEL).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Content */}
+          <div className="qf-field">
+            <label className="qf-label">Question Content / Text</label>
+            <textarea
+              className="qf-input"
+              rows={4}
+              placeholder="Enter question text here... (Math LaTeX formulas e.g. $x^2 + y^2 = r^2$ are supported)"
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              required
+            />
+          </div>
+
+          {/* MCQ Options */}
+          {newType === 'mcq' && (
+            <div className="qf-field">
+              <label className="qf-label">Options</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {newOptions.map((opt, i) => (
+                  <div key={i} className="qf-mcq-option-row">
+                    <span className="qf-mcq-option-badge">{String.fromCharCode(65 + i)}</span>
+                    <input
+                      type="text"
+                      className="qf-input"
+                      placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                      value={opt}
+                      onChange={(e) => {
+                        const next = [...newOptions];
+                        next[i] = e.target.value;
+                        setNewOptions(next);
+                      }}
+                    />
+                    {newOptions.length > 2 && (
+                      <button
+                        type="button"
+                        className="qf-icon-btn qf-icon-btn--sm"
+                        title="Remove option"
+                        onClick={() => setNewOptions(newOptions.filter((_, idx) => idx !== i))}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {newOptions.length < 8 && (
+                  <button
+                    type="button"
+                    className="qf-btn qf-btn--ghost qf-btn--sm"
+                    style={{ alignSelf: 'flex-start' }}
+                    onClick={() => setNewOptions([...newOptions, ''])}
+                  >
+                    <Plus size={13} /> Add another option
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Marks, Difficulty, Cognitive Level */}
+          <div className="qf-form-row-3">
+            <div className="qf-field">
+              <label className="qf-label">Marks</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="qf-input"
+                value={newMarks}
+                onChange={(e) => setNewMarks(Math.max(0, parseInt(e.target.value, 10) || 0))}
+              />
+            </div>
+            <div className="qf-field">
+              <label className="qf-label">Difficulty</label>
+              <select
+                className="qf-input qf-select"
+                value={newDifficulty}
+                onChange={(e) => setNewDifficulty(e.target.value as Difficulty)}
+              >
+                {Object.entries(DIFFICULTY_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div className="qf-field">
+              <label className="qf-label">Cognitive Level (Bloom's)</label>
+              <select
+                className="qf-input qf-select"
+                value={newCognitiveLevel}
+                onChange={(e) => setNewCognitiveLevel(e.target.value as CognitiveLevel)}
+              >
+                {COGNITIVE_LEVELS.map((cl) => (
+                  <option key={cl.value} value={cl.value}>{cl.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Taxonomy Details */}
+          <div className="qf-form-row-3">
+            <div className="qf-field">
+              <label className="qf-label">Subject</label>
+              <select
+                className="qf-input qf-select"
+                value={newSubjectId}
+                onChange={(e) => setNewSubjectId(e.target.value)}
+              >
+                <option value="">Select subject...</option>
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="qf-field">
+              <label className="qf-label">Class / Grade</label>
+              <select
+                className="qf-input qf-select"
+                value={newClassId}
+                onChange={(e) => setNewClassId(e.target.value)}
+              >
+                <option value="">Select class...</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="qf-field">
+              <label className="qf-label">Chapter</label>
+              <input
+                type="text"
+                className="qf-input"
+                placeholder="e.g. Thermodynamics"
+                value={newChapter}
+                onChange={(e) => setNewChapter(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="qf-form-row-3">
+            <div className="qf-field">
+              <label className="qf-label">Topic</label>
+              <input
+                type="text"
+                className="qf-input"
+                placeholder="e.g. Carnot Cycle"
+                value={newTopic}
+                onChange={(e) => setNewTopic(e.target.value)}
+              />
+            </div>
+            <div className="qf-field">
+              <label className="qf-label">Course / Board</label>
+              <select
+                className="qf-input qf-select"
+                value={newCourseId}
+                onChange={(e) => setNewCourseId(e.target.value)}
+              >
+                <option value="">Select board / course...</option>
+                {courses.map((co) => (
+                  <option key={co.id} value={co.id}>{co.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="qf-field">
+              <label className="qf-label">Stream / Category</label>
+              <input
+                type="text"
+                className="qf-input"
+                placeholder="e.g. Science / CBSE"
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="qf-form__actions" style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="qf-btn qf-btn--ghost"
+              onClick={() => setIsAddOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="qf-btn qf-btn--primary"
+              disabled={isCreatingQuestion}
+            >
+              {isCreatingQuestion ? <Loader2 size={14} className="qf-spin" /> : <Plus size={14} />}
+              {isCreatingQuestion ? 'Saving...' : 'Save Question'}
+            </button>
+          </div>
+        </form>
       </Dialog>
     </div>
   );

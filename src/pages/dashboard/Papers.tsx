@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Search, LayoutGrid, List, FileText, SearchX, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { useDashboard } from './DashboardLayout';
@@ -18,7 +18,6 @@ const STATUS_TABS: { key: 'all' | ExamStatus; label: string }[] = [
 ];
 
 export default function Papers() {
-  const navigate = useNavigate();
   const { openNewPaper } = useDashboard();
   const { questionPapers, courses, subjects, classes, loading } = useStore();
   const names = useLookupNames();
@@ -51,7 +50,7 @@ export default function Papers() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return questionPapers
-      .filter((p) => !q || p.title.toLowerCase().includes(q) || (p.qpCode || '').toLowerCase().includes(q))
+      .filter((p) => !q || p.title.toLowerCase().includes(q))
       .filter((p) => !subjectFilter || p.subjectId === subjectFilter)
       .filter((p) => !classFilter || p.classId === classFilter)
       .filter((p) => !courseFilter || p.courseId === courseFilter)
@@ -112,7 +111,7 @@ export default function Papers() {
           <input
             type="search"
             className="qf-search__input"
-            placeholder="Search by title or QP code"
+            placeholder="Search papers by title..."
             aria-label="Search papers"
             value={search}
             onChange={(e) => updateSearch(e.target.value)}
@@ -194,13 +193,13 @@ export default function Papers() {
                   const subject = names.subject(p.subjectId);
                   const color = subjectColor(p.subjectId || subject);
                   return (
-                    <tr key={p.id} onClick={() => navigate(`/editor/${p.id}`)}>
+                    <tr key={p.id} onClick={() => window.open(`/editor/${p.id}`, '_blank')}>
                       <th scope="row">
                         <span className="qf-table__paper">
                           <span className="qf-file-icon" style={{ color: color.fg, background: color.bg }}><FileText size={15} /></span>
                           <span>
-                            <Link to={`/editor/${p.id}`} className="qf-list__title" onClick={(e) => e.stopPropagation()}>{p.title}</Link>
-                            <span className="qf-list__meta">{p.qpCode || 'Draft'}</span>
+                            <Link to={`/editor/${p.id}`} target="_blank" rel="noopener noreferrer" className="qf-list__title" onClick={(e) => e.stopPropagation()}>{p.title}</Link>
+                            <span className="qf-list__meta">{p.isPublished ? 'Published' : 'Draft'}</span>
                           </span>
                         </span>
                       </th>

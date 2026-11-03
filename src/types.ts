@@ -180,7 +180,7 @@ export interface PaperSpacing {
 
 export interface QuestionPaper {
   id: string;
-  qpCode: string;
+  qpCode?: string;
   teacherId: string;
   title: string;
   date?: string;

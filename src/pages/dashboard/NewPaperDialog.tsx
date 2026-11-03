@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Loader2, Plus } from 'lucide-react';
 import { useStore } from '../../store';
 import Dialog from './Dialog';
@@ -86,7 +85,6 @@ function CreatableSelect({
 }
 
 export default function NewPaperDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const navigate = useNavigate();
   const { courses, subjects, classes, createQuestionPaper, createCourse, createSubject, createClass } = useStore();
 
   const [title, setTitle] = useState('');
@@ -122,7 +120,7 @@ export default function NewPaperDialog({ open, onClose }: { open: boolean; onClo
       }
       reset();
       onClose();
-      navigate(`/editor/${id}`);
+      window.open(`/editor/${id}`, '_blank');
     } catch (err) {
       console.error('Create paper error:', err);
       setError('Something went wrong while creating the paper. Please try again.');
