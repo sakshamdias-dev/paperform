@@ -25,6 +25,25 @@ import { INITIAL_SHARED_QUESTIONS } from './utils/seedSharedQuestions';
 const LOCAL_SHARED_QUESTIONS_KEY = 'questforma_shared_questions_v1';
 const LOCAL_NOTIFICATIONS_KEY = 'questforma_notifications_v1';
 const LOCAL_LOOKUPS_KEY = 'questforma_lookups_v1';
+const LOCAL_USER_KEY = 'questforma_user_v1';
+
+function getStoredLocalUser(): User | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_USER_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+function saveLocalUser(user: User | null) {
+  try {
+    if (user) {
+      localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(LOCAL_USER_KEY);
+    }
+  } catch {}
+}
 
 /**
  * Columns introduced by `classification_migration.sql`. If the migration has not been
@@ -221,7 +240,7 @@ interface AppState {
 const generateId = () => crypto.randomUUID();
 
 export const useStore = create<AppState>()((set, get) => ({
-  user: null,
+  user: getStoredLocalUser(),
   courses: [],
   subjects: [],
   classes: [],
@@ -236,10 +255,14 @@ export const useStore = create<AppState>()((set, get) => ({
   currentPaperId: null,
   loading: false,
 
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    saveLocalUser(user);
+    set({ user });
+  },
   setCurrentPaper: (id) => set({ currentPaperId: id }),
   setLoading: (loading) => set({ loading }),
   logout: () => {
+    saveLocalUser(null);
     set({
       user: null,
       courses: [],

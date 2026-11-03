@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useStore } from './store';
 import { supabase } from './supabase';
 import Login from './pages/Login';
@@ -14,12 +14,33 @@ import Editor from './pages/Editor';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-function App() {
+function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const user = useStore((s) => s.user);
+  const location = useLocation();
+
+  if (!user?.id) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  return children;
+}
+
+function LoginRoute() {
+  const user = useStore((s) => s.user);
+  const location = useLocation();
+  const from = (location.state as any)?.from?.pathname || '/';
+
+  if (user?.id) {
+    return <Navigate to={from} replace />;
+  }
+  return <Login />;
+}
+
+function App() {
   const setUser = useStore((s) => s.setUser);
   const logout = useStore((s) => s.logout);
   const fetchQuestionPapers = useStore((s) => s.fetchQuestionPapers);
-  const [loading, setLoading] = useState(true);
+  // If we already have a persisted user in store, don't show the full-screen blocking loader
+  const [loading, setLoading] = useState(() => !useStore.getState().user?.id);
 
   useEffect(() => {
     let mounted = true;
@@ -56,7 +77,8 @@ function App() {
               createdAt: profileData?.created_at ? new Date(profileData.created_at).getTime() : Date.now(),
               updatedAt: profileData?.updated_at ? new Date(profileData.updated_at).getTime() : Date.now(),
             });
-            await Promise.allSettled([
+            // Background pre-fetch without blocking the UI
+            void Promise.allSettled([
               fetchQuestionPapers(),
               useStore.getState().fetchSharedQuestions(),
               useStore.getState().fetchNotifications(),
@@ -76,15 +98,27 @@ function App() {
       if (mounted) setLoading(false);
     };
 
-    // Listen for auth changes (INITIAL_SESSION fires automatically on registration)
+    // 1. Initial session check via getSession()
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (mounted) {
+        if (session) {
+          void handleSession(session);
+        } else {
+          loadedUserId = null;
+          logout();
+          setLoading(false);
+        }
+      }
+    });
+
+    // 2. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        // Defer out of GoTrue's internal auth lock before making Supabase DB queries
+      if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && session?.user)) {
         setTimeout(() => {
           if (mounted) void handleSession(session);
         }, 0);
       } else if (event === 'TOKEN_REFRESHED') {
-        if (!loadedUserId && session?.user) {
+        if (session?.user) {
           setTimeout(() => {
             if (mounted) void handleSession(session);
           }, 0);
@@ -100,7 +134,7 @@ function App() {
 
     const timeout = setTimeout(() => {
       if (mounted) setLoading(false);
-    }, 5000);
+    }, 4000);
 
     return () => {
       mounted = false;
@@ -135,8 +169,15 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={user?.id ? <Navigate to="/" replace /> : <Login />} />
-        <Route path="/" element={user?.id ? <DashboardLayout /> : <Navigate to="/login" replace />}>
+        <Route path="/login" element={<LoginRoute />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Overview />} />
           <Route path="papers" element={<Papers />} />
           <Route path="schedule" element={<Schedule />} />
@@ -147,13 +188,11 @@ function App() {
         <Route
           path="/editor/:id"
           element={
-            user?.id ? (
+            <ProtectedRoute>
               <ErrorBoundary>
                 <Editor />
               </ErrorBoundary>
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            </ProtectedRoute>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
