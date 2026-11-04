@@ -16,6 +16,53 @@ export function cleanImageHtml(html: string | undefined | null): string {
     .replace(/(<img\b[^>]*?)\s*style=["']\s*["']/gi, '$1');
 }
 
+export function latexToQuillFormula(html: string | undefined | null): string {
+  if (!html) return '';
+  let processed = html;
+
+  // Convert \( ... \) delimiters to Quill formula embed format
+  processed = processed.replace(
+    /\\\(([\s\S]*?)\\\)/g,
+    (_match, latex) => {
+      const cleanLatex = latex.replace(/&nbsp;/g, ' ').trim();
+      return `<span class="ql-formula" data-value="${cleanLatex.replace(/"/g, '&quot;')}"></span>`;
+    }
+  );
+
+  // Convert \[ ... \] delimiters
+  processed = processed.replace(
+    /\\\[([\s\S]*?)\\\]/g,
+    (_match, latex) => {
+      const cleanLatex = latex.replace(/&nbsp;/g, ' ').trim();
+      return `<span class="ql-formula" data-value="${cleanLatex.replace(/"/g, '&quot;')}"></span>`;
+    }
+  );
+
+  // Convert $$ ... $$ delimiters
+  processed = processed.replace(
+    /\$\$([\s\S]*?)\$\$/g,
+    (_match, latex) => {
+      const cleanLatex = latex.replace(/&nbsp;/g, ' ').trim();
+      return `<span class="ql-formula" data-value="${cleanLatex.replace(/"/g, '&quot;')}"></span>`;
+    }
+  );
+
+  return processed;
+}
+
+export function quillFormulaToLatex(html: string | undefined | null): string {
+  if (!html) return '';
+  return html
+    .replace(
+      /<span[^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*data-value=["']([^"']*)["'][^>]*>[\s\S]*?<\/span>/gi,
+      (_match, val) => `\\(${String(val).replace(/&nbsp;/g, ' ').trim()}\\)`
+    )
+    .replace(
+      /<span[^>]*data-value=["']([^"']*)["'][^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*>[\s\S]*?<\/span>/gi,
+      (_match, val) => `\\(${String(val).replace(/&nbsp;/g, ' ').trim()}\\)`
+    );
+}
+
 export function preprocessMathHtml(html: string | undefined | null): string {
   if (!html) return '';
   let processed = cleanImageHtml(html);

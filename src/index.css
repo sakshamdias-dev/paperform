@@ -829,7 +829,7 @@ textarea::placeholder {
   overflow-x: auto;
 }
 
-/* KaTeX formula rendering in paper preview */
+/* KaTeX formula rendering in paper preview and editor */
 .paper-page .ql-formula,
 .paper-container .ql-formula {
   display: inline-block;
@@ -837,7 +837,29 @@ textarea::placeholder {
   padding: 0 2px;
 }
 
-.paper-page .katex {
+.ql-editor .ql-formula {
+  cursor: pointer;
+  display: inline-block;
+  margin: 0 2px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  vertical-align: middle;
+  font-size: 1.05em;
+  line-height: 1.2;
+  transition: all 0.15s ease;
+  user-select: all;
+}
+
+.ql-editor .ql-formula:hover {
+  background: rgba(37, 99, 235, 0.16);
+  border-color: rgba(37, 99, 235, 0.4);
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.12);
+}
+
+.paper-page .katex,
+.ql-editor .katex {
   font-size: 1em;
 }
 
@@ -3288,6 +3310,10 @@ math-field::part(virtual-keyboard-toggle) {
 .rich-editor-wrapper.mini-editor .ql-editor {
   min-height: 60px !important;
   padding: 8px 12px !important;
+}
+
+.rich-editor-wrapper[style*="--ql-min-height"] .ql-editor {
+  min-height: var(--ql-min-height) !important;
 }
 
 .rich-editor-wrapper .ql-editor.ql-blank::before {

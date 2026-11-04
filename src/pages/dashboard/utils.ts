@@ -94,8 +94,16 @@ export function subjectColor(key?: string) {
 }
 
 export function stripHtml(html: string) {
+  if (!html) return '';
+  const withLatex = html.replace(
+    /<span[^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*data-value=["']([^"']*)["'][^>]*>[\s\S]*?<\/span>/gi,
+    ' \\($1\\) '
+  ).replace(
+    /<span[^>]*data-value=["']([^"']*)["'][^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*>[\s\S]*?<\/span>/gi,
+    ' \\($1\\) '
+  );
   const tmp = document.createElement('div');
-  tmp.innerHTML = html;
+  tmp.innerHTML = withLatex;
   return (tmp.textContent || '').replace(/\s+/g, ' ').trim();
 }
 

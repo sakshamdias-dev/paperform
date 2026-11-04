@@ -4,7 +4,8 @@ import { Search, Library, Users, PenLine, Share2, Info, SearchX, Layers, Trendin
 import type { Difficulty, QuestionType, CognitiveLevel } from '../../types';
 import { COGNITIVE_LEVELS } from '../../types';
 import { useStore } from '../../store';
-import { renderMath, preprocessMathHtml } from '../../utils/mathjax';
+import { renderMath, preprocessMathHtml, quillFormulaToLatex } from '../../utils/mathjax';
+import FullQuill from '../../components/FullQuill';
 import { PageHeader, EmptyState } from './components';
 import Dialog from './Dialog';
 import { DIFFICULTY_LABEL, QUESTION_TYPE_LABEL, relativeTime, stripHtml } from './utils';
@@ -130,13 +131,21 @@ export default function QuestionBank() {
   };
 
   const handleSaveNewQuestion = async () => {
-    if (!newContent.trim()) {
+    const rawContent = quillFormulaToLatex(newContent.trim());
+    const contentText = rawContent.replace(/<[^>]*>/g, '').trim();
+    const hasMediaOrMath = /<img\b|<span[^>]*class=["'][^"']*ql-formula/i.test(newContent) || /\\\(|\\\[|\$\$|\$/.test(rawContent);
+    if (!contentText && !hasMediaOrMath) {
       setCreateError('Please enter question content.');
       return;
     }
+
+    const processedOptions = newOptions.map((o) => quillFormulaToLatex(o.trim())).filter((o) => {
+      const text = o.replace(/<[^>]*>/g, '').trim();
+      return text.length > 0 || /<img\b|<span[^>]*class=["'][^"']*ql-formula/i.test(o) || /\\\(|\\\[|\$\$|\$/.test(o);
+    });
+
     if (newType === 'mcq') {
-      const validOpts = newOptions.filter((o) => o.trim());
-      if (validOpts.length < 2) {
+      if (processedOptions.length < 2) {
         setCreateError('Please provide at least 2 options for multiple choice questions.');
         return;
       }
@@ -161,9 +170,9 @@ export default function QuestionBank() {
       }
 
       await createQuestion(
-        newContent.trim(),
+        rawContent,
         newType,
-        newType === 'mcq' ? newOptions.map((o) => o.trim()).filter(Boolean) : undefined,
+        newType === 'mcq' ? processedOptions : undefined,
         newCourseId || undefined,
         newSubjectId || undefined,
         newClassId || undefined,
@@ -899,13 +908,11 @@ export default function QuestionBank() {
           {/* Content */}
           <div className="qf-field">
             <label className="qf-label">Question Content / Text</label>
-            <textarea
-              className="qf-input"
-              rows={4}
-              placeholder="Enter question text here... (Math LaTeX formulas e.g. $x^2 + y^2 = r^2$ are supported)"
+            <FullQuill
               value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              required
+              onChange={setNewContent}
+              placeholder="Enter question content... (Click the ∑ button in the toolbar to insert formulas)"
+              toolbarId="qb-question-toolbar"
             />
           </div>
 
@@ -913,25 +920,29 @@ export default function QuestionBank() {
           {newType === 'mcq' && (
             <div className="qf-field">
               <label className="qf-label">Options</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {newOptions.map((opt, i) => (
-                  <div key={i} className="qf-mcq-option-row">
-                    <span className="qf-mcq-option-badge">{String.fromCharCode(65 + i)}</span>
-                    <input
-                      type="text"
-                      className="qf-input"
-                      placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                      value={opt}
-                      onChange={(e) => {
-                        const next = [...newOptions];
-                        next[i] = e.target.value;
-                        setNewOptions(next);
-                      }}
-                    />
+                  <div key={i} className="qf-mcq-option-row" style={{ alignItems: 'flex-start' }}>
+                    <span className="qf-mcq-option-badge" style={{ marginTop: 8 }}>{String.fromCharCode(65 + i)}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <FullQuill
+                        value={opt}
+                        onChange={(val) => {
+                          const next = [...newOptions];
+                          next[i] = val;
+                          setNewOptions(next);
+                        }}
+                        placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                        toolbarId={`qb-opt-toolbar-${i}`}
+                        isMini
+                        minHeight="60px"
+                      />
+                    </div>
                     {newOptions.length > 2 && (
                       <button
                         type="button"
                         className="qf-icon-btn qf-icon-btn--sm"
+                        style={{ marginTop: 8 }}
                         title="Remove option"
                         onClick={() => setNewOptions(newOptions.filter((_, idx) => idx !== i))}
                       >
