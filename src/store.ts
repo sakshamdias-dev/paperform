@@ -16,6 +16,7 @@ import type {
   Topic,
   Category,
   QuestionMeta,
+  SubQuestionNumberingStyle,
 } from './types';
 import { DEFAULT_COGNITIVE_LEVEL } from './types';
 import { supabase } from './supabase';
@@ -199,7 +200,10 @@ interface AppState {
     explanation?: string,
     imageUrl?: string,
     meta?: QuestionMeta,
-    marks?: number
+    marks?: number,
+    parentId?: string,
+    subquestions?: SharedQuestion['subquestions'],
+    subNumberingStyle?: SubQuestionNumberingStyle
   ) => Promise<string>;
   updateQuestion: (id: string, updates: Partial<Question>) => Promise<void>;
   deleteQuestion: (id: string) => Promise<void>;
@@ -991,7 +995,10 @@ export const useStore = create<AppState>()((set, get) => ({
     explanation?: string,
     imageUrl?: string,
     meta?: QuestionMeta,
-    marks?: number
+    marks?: number,
+    parentId?: string,
+    subquestions?: SharedQuestion['subquestions'],
+    subNumberingStyle?: SubQuestionNumberingStyle
   ) => {
     const { user, shareQuestionToBank } = get();
     if (!user?.id) return '';
@@ -1015,7 +1022,10 @@ export const useStore = create<AppState>()((set, get) => ({
       topicId: meta?.topicId,
       categoryId: meta?.categoryId,
       cognitiveLevel: resolvedCognitive,
+      subNumberingStyle,
       marks: finalMarks,
+      parentId,
+      subquestions: subquestions as any,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -1037,11 +1047,13 @@ export const useStore = create<AppState>()((set, get) => ({
       category_id: meta?.categoryId || null,
       cognitive_level: resolvedCognitive,
       marks: finalMarks,
+      parent_id: parentId || null,
+      sub_numbering_style: subNumberingStyle || null,
       explanation,
       image_url: imageUrl,
     }, 'createQuestion');
 
-    if (!user.keepQuestionsPrivate && content.trim().length > 10) {
+    if (!user.keepQuestionsPrivate && content.trim().length > 10 && !parentId) {
       void shareQuestionToBank({
         content,
         questionType,
@@ -1049,6 +1061,7 @@ export const useStore = create<AppState>()((set, get) => ({
         difficulty: difficulty || 'medium',
         meta: { ...meta, courseId, subjectId, classId, cognitiveLevel: resolvedCognitive },
         marks: finalMarks,
+        subquestions,
       });
     }
 

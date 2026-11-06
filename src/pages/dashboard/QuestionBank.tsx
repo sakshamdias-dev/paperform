@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search, Library, Users, PenLine, Share2, Info, SearchX, Layers, TrendingUp, X, Filter, ChevronDown, ChevronUp, RotateCcw, Plus, Check, Trash2, Loader2 } from 'lucide-react';
-import type { Difficulty, QuestionType, CognitiveLevel } from '../../types';
-import { COGNITIVE_LEVELS } from '../../types';
+import { Search, Library, Users, PenLine, Share2, Info, SearchX, Layers, TrendingUp, X, Filter, ChevronDown, ChevronUp, RotateCcw, Plus, Check, Trash2, Loader2, ChevronRight } from 'lucide-react';
+import type { Difficulty, QuestionType, CognitiveLevel, SubQuestionNumberingStyle } from '../../types';
+import { COGNITIVE_LEVELS, DEFAULT_COGNITIVE_LEVEL } from '../../types';
 import { useStore } from '../../store';
 import { renderMath, preprocessMathHtml, quillFormulaToLatex } from '../../utils/mathjax';
 import FullQuill from '../../components/FullQuill';
@@ -11,6 +11,18 @@ import Dialog from './Dialog';
 import { DIFFICULTY_LABEL, QUESTION_TYPE_LABEL, relativeTime, stripHtml } from './utils';
 
 type Tab = 'community' | 'mine' | 'contributions';
+
+interface DraftSubquestion {
+  id: string;
+  type: QuestionType;
+  content: string;
+  options: string[];
+  marks: number;
+  cognitiveLevel?: CognitiveLevel;
+  subNumberingStyle?: SubQuestionNumberingStyle;
+  isOptional?: boolean;
+  isExpanded?: boolean;
+}
 
 interface BankItem {
   id: string;
@@ -36,6 +48,7 @@ interface BankItem {
   author?: string;
   usageCount?: number;
   subCount: number;
+  subquestions?: any[];
   createdAt: number;
 }
 
@@ -91,20 +104,31 @@ export default function QuestionBank() {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [viewing, setViewing] = useState<BankItem | null>(null);
 
-  // Add Question Dialog State
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newContent, setNewContent] = useState('');
-  const [newType, setNewType] = useState<QuestionType>('subjective');
-  const [newOptions, setNewOptions] = useState<string[]>(['', '', '', '']);
-  const [newMarks, setNewMarks] = useState<number>(1);
-  const [newDifficulty, setNewDifficulty] = useState<Difficulty>('medium');
-  const [newCognitiveLevel, setNewCognitiveLevel] = useState<CognitiveLevel>('understand');
-  const [newCourseId, setNewCourseId] = useState('');
-  const [newSubjectId, setNewSubjectId] = useState('');
-  const [newClassId, setNewClassId] = useState('');
-  const [newChapter, setNewChapter] = useState('');
-  const [newTopic, setNewTopic] = useState('');
-  const [newCategory, setNewCategory] = useState('');
+  // Question Bank Constructor State
+  const [isConstructorOpen, setIsConstructorOpen] = useState(false);
+  const [draftType, setDraftType] = useState<QuestionType>('subjective');
+  const [draftContent, setDraftContent] = useState('');
+  const [draftOptions, setDraftOptions] = useState<string[]>(['', '', '', '']);
+  const [draftMarks, setDraftMarks] = useState<number>(1);
+  const [draftDifficulty, setDraftDifficulty] = useState<Difficulty>('medium');
+  const [draftIsOptional, setDraftIsOptional] = useState<boolean>(false);
+  const [draftCourseId, setDraftCourseId] = useState('');
+  const [draftSubjectId, setDraftSubjectId] = useState('');
+  const [draftChapterId, setDraftChapterId] = useState('');
+  const [draftTopicId, setDraftTopicId] = useState('');
+  const [draftCategoryId, setDraftCategoryId] = useState('');
+  const [draftCognitiveLevel, setDraftCognitiveLevel] = useState<CognitiveLevel>(DEFAULT_COGNITIVE_LEVEL);
+  const [draftSubNumberingStyle, setDraftSubNumberingStyle] = useState<SubQuestionNumberingStyle | ''>('');
+  const [draftSubquestions, setDraftSubquestions] = useState<DraftSubquestion[]>([]);
+
+  // Inline taxonomy creator states
+  const [isAddingChapter, setIsAddingChapter] = useState(false);
+  const [newChapterName, setNewChapterName] = useState('');
+  const [isAddingTopic, setIsAddingTopic] = useState(false);
+  const [newTopicName, setNewTopicName] = useState('');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   const [isCreatingQuestion, setIsCreatingQuestion] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -114,85 +138,138 @@ export default function QuestionBank() {
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
   const [isAddingToPaper, setIsAddingToPaper] = useState(false);
 
-  const resetAddForm = () => {
-    setNewContent('');
-    setNewType('subjective');
-    setNewOptions(['', '', '', '']);
-    setNewMarks(1);
-    setNewDifficulty('medium');
-    setNewCognitiveLevel('understand');
-    setNewCourseId('');
-    setNewSubjectId('');
-    setNewClassId('');
-    setNewChapter('');
-    setNewTopic('');
-    setNewCategory('');
+  const handleAddOption = () => {
+    if (draftOptions.length < 8) {
+      setDraftOptions([...draftOptions, '']);
+    }
+  };
+
+  const handleRemoveOption = (index: number) => {
+    if (draftOptions.length > 2) {
+      setDraftOptions(draftOptions.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleAddDraftSubquestion = () => {
+    const newSub: DraftSubquestion = {
+      id: 'draft-sub-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+      type: 'subjective',
+      content: '',
+      options: ['', '', '', ''],
+      marks: 1,
+      cognitiveLevel: DEFAULT_COGNITIVE_LEVEL,
+      isOptional: false,
+      isExpanded: true,
+    };
+    setDraftSubquestions([...draftSubquestions, newSub]);
+  };
+
+  const handleUpdateDraftSubquestion = (id: string, field: keyof DraftSubquestion, value: any) => {
+    setDraftSubquestions(draftSubquestions.map((sq) => {
+      if (sq.id === id) {
+        return { ...sq, [field]: value };
+      }
+      return sq;
+    }));
+  };
+
+  const handleRemoveDraftSubquestion = (id: string) => {
+    setDraftSubquestions(draftSubquestions.filter((sq) => sq.id !== id));
+  };
+
+  const handleCancelDraft = () => {
+    setIsConstructorOpen(false);
+    setDraftType('subjective');
+    setDraftContent('');
+    setDraftOptions(['', '', '', '']);
+    setDraftMarks(1);
+    setDraftDifficulty('medium');
+    setDraftIsOptional(false);
+    setDraftCourseId('');
+    setDraftSubjectId('');
+    setDraftChapterId('');
+    setDraftTopicId('');
+    setDraftCategoryId('');
+    setDraftCognitiveLevel(DEFAULT_COGNITIVE_LEVEL);
+    setDraftSubNumberingStyle('');
+    setDraftSubquestions([]);
+    setIsAddingChapter(false);
+    setNewChapterName('');
+    setIsAddingTopic(false);
+    setNewTopicName('');
+    setIsAddingCategory(false);
+    setNewCategoryName('');
     setCreateError('');
   };
 
-  const handleSaveNewQuestion = async () => {
-    const rawContent = quillFormulaToLatex(newContent.trim());
+  const handleSaveDraftQuestion = async () => {
+    const rawContent = quillFormulaToLatex(draftContent.trim());
     const contentText = rawContent.replace(/<[^>]*>/g, '').trim();
-    const hasMediaOrMath = /<img\b|<span[^>]*class=["'][^"']*ql-formula/i.test(newContent) || /\\\(|\\\[|\$\$|\$/.test(rawContent);
+    const hasMediaOrMath = /<img\b|<span[^>]*class=["'][^"']*ql-formula/i.test(draftContent) || /\\\(|\\\[|\$\$|\$/.test(rawContent);
     if (!contentText && !hasMediaOrMath) {
       setCreateError('Please enter question content.');
       return;
     }
 
-    const processedOptions = newOptions.map((o) => quillFormulaToLatex(o.trim())).filter((o) => {
+    const processedOptions = draftOptions.map((o) => quillFormulaToLatex(o.trim())).filter((o) => {
       const text = o.replace(/<[^>]*>/g, '').trim();
       return text.length > 0 || /<img\b|<span[^>]*class=["'][^"']*ql-formula/i.test(o) || /\\\(|\\\[|\$\$|\$/.test(o);
     });
 
-    if (newType === 'mcq') {
+    if (draftType === 'mcq') {
       if (processedOptions.length < 2) {
         setCreateError('Please provide at least 2 options for multiple choice questions.');
         return;
       }
     }
 
+    const processedSubquestions = draftSubquestions.map((sq, idx) => {
+      const sqRaw = quillFormulaToLatex(sq.content.trim());
+      const sqOpts = (sq.options || []).map((o) => quillFormulaToLatex(o.trim())).filter((o) => {
+        const text = o.replace(/<[^>]*>/g, '').trim();
+        return text.length > 0 || /<img\b|<span[^>]*class=["'][^"']*ql-formula/i.test(o) || /\\\(|\\\[|\$\$|\$/.test(o);
+      });
+      return {
+        id: sq.id,
+        content: sqRaw,
+        questionType: sq.type,
+        marks: sq.type === 'text' ? 0 : (sq.marks ?? 1),
+        options: sqOpts,
+        cognitiveLevel: sq.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL,
+        subNumberingStyle: sq.subNumberingStyle,
+        isOptional: sq.isOptional,
+        order: idx + 1,
+      };
+    });
+
     setIsCreatingQuestion(true);
     setCreateError('');
     try {
-      let resolvedChapterId = chapters.find((c) => c.name.toLowerCase() === newChapter.trim().toLowerCase())?.id;
-      if (!resolvedChapterId && newChapter.trim()) {
-        resolvedChapterId = await createChapter(newChapter.trim(), newSubjectId || undefined);
-      }
-
-      let resolvedTopicId = topics.find((t) => t.name.toLowerCase() === newTopic.trim().toLowerCase())?.id;
-      if (!resolvedTopicId && newTopic.trim()) {
-        resolvedTopicId = await createTopic(newTopic.trim(), resolvedChapterId || undefined);
-      }
-
-      let resolvedCategoryId = categories.find((c) => c.name.toLowerCase() === newCategory.trim().toLowerCase())?.id;
-      if (!resolvedCategoryId && newCategory.trim()) {
-        resolvedCategoryId = await createCategory(newCategory.trim());
-      }
-
       await createQuestion(
         rawContent,
-        newType,
-        newType === 'mcq' ? processedOptions : undefined,
-        newCourseId || undefined,
-        newSubjectId || undefined,
-        newClassId || undefined,
-        newDifficulty,
+        draftType,
+        draftType === 'mcq' ? processedOptions : undefined,
+        draftCourseId || undefined,
+        draftSubjectId || undefined,
+        undefined,
+        draftDifficulty,
         undefined,
         undefined,
         {
-          courseId: newCourseId || undefined,
-          subjectId: newSubjectId || undefined,
-          classId: newClassId || undefined,
-          chapterId: resolvedChapterId,
-          topicId: resolvedTopicId,
-          categoryId: resolvedCategoryId,
-          cognitiveLevel: newCognitiveLevel,
+          courseId: draftCourseId || undefined,
+          subjectId: draftSubjectId || undefined,
+          chapterId: draftChapterId || undefined,
+          topicId: draftTopicId || undefined,
+          categoryId: draftCategoryId || undefined,
+          cognitiveLevel: draftCognitiveLevel,
         },
-        newMarks
+        draftType === 'text' ? 0 : draftMarks,
+        undefined,
+        processedSubquestions.length > 0 ? (processedSubquestions as any) : undefined,
+        draftSubNumberingStyle || undefined
       );
 
-      setIsAddOpen(false);
-      resetAddForm();
+      handleCancelDraft();
       setTab('mine');
     } catch (err: any) {
       console.error(err);
@@ -271,35 +348,41 @@ export default function QuestionBank() {
         author: q.authorName,
         usageCount: q.usageCount,
         subCount: q.subquestions?.length || 0,
+        subquestions: q.subquestions || [],
         createdAt: q.createdAt,
       }));
 
     const mine: BankItem[] = questions
       .filter((q) => !q.parentId)
-      .map((q) => ({
-        id: q.id,
-        content: q.content,
-        preview: stripHtml(q.content),
-        questionType: q.questionType,
-        difficulty: q.difficulty,
-        cognitiveLevel: q.cognitiveLevel,
-        marks: q.marks,
-        options: q.options || [],
-        courseId: q.courseId,
-        courseName: courses.find((c) => c.id === q.courseId)?.name,
-        subjectId: q.subjectId,
-        subject: subjects.find((s) => s.id === q.subjectId)?.name,
-        classId: q.classId,
-        klass: classes.find((c) => c.id === q.classId)?.name,
-        chapterId: q.chapterId,
-        chapter: chapters.find((c) => c.id === q.chapterId)?.name,
-        topicId: q.topicId,
-        topic: topics.find((t) => t.id === q.topicId)?.name,
-        categoryId: q.categoryId,
-        category: categories.find((c) => c.id === q.categoryId)?.name,
-        subCount: q.subquestions?.length || 0,
-        createdAt: q.createdAt,
-      }));
+      .map((q) => {
+        const childQuestions = questions.filter((sq) => sq.parentId === q.id);
+        const resolvedSubqs = q.subquestions && q.subquestions.length > 0 ? q.subquestions : childQuestions;
+        return {
+          id: q.id,
+          content: q.content,
+          preview: stripHtml(q.content),
+          questionType: q.questionType,
+          difficulty: q.difficulty,
+          cognitiveLevel: q.cognitiveLevel,
+          marks: q.marks,
+          options: q.options || [],
+          courseId: q.courseId,
+          courseName: courses.find((c) => c.id === q.courseId)?.name,
+          subjectId: q.subjectId,
+          subject: subjects.find((s) => s.id === q.subjectId)?.name,
+          classId: q.classId,
+          klass: classes.find((c) => c.id === q.classId)?.name,
+          chapterId: q.chapterId,
+          chapter: chapters.find((c) => c.id === q.chapterId)?.name,
+          topicId: q.topicId,
+          topic: topics.find((t) => t.id === q.topicId)?.name,
+          categoryId: q.categoryId,
+          category: categories.find((c) => c.id === q.categoryId)?.name,
+          subCount: resolvedSubqs.length,
+          subquestions: resolvedSubqs,
+          createdAt: q.createdAt,
+        };
+      });
 
     const mineIds = new Set(sharedQuestions.filter((q) => q.createdByUserId === user?.id).map((q) => q.id));
     return {
@@ -371,6 +454,7 @@ export default function QuestionBank() {
         if (!q) return true;
         return (
           i.preview.toLowerCase().includes(q) ||
+          i.content.toLowerCase().includes(q) ||
           (i.chapter || '').toLowerCase().includes(q) ||
           (i.topic || '').toLowerCase().includes(q) ||
           (i.subject || '').toLowerCase().includes(q) ||
@@ -396,9 +480,19 @@ export default function QuestionBank() {
   const contributionReuse = lists.contributions.reduce((a, q) => a + (q.usageCount || 0), 0);
   const hasFilters = !!(search || activeFilterCount > 0);
 
+  // Render MathJax whenever questions list updates, paginates, or changes tabs
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void renderMath();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [filtered, limit, tab]);
+
   useEffect(() => {
     if (viewing) {
-      const t = setTimeout(() => renderMath(), 50);
+      const t = setTimeout(() => {
+        void renderMath();
+      }, 60);
       return () => clearTimeout(t);
     }
   }, [viewing]);
@@ -418,7 +512,7 @@ export default function QuestionBank() {
           <button
             type="button"
             className="qf-btn qf-btn--primary"
-            onClick={() => { resetAddForm(); setIsAddOpen(true); }}
+            onClick={() => { handleCancelDraft(); setIsConstructorOpen(true); }}
           >
             <Plus size={16} /> Add question
           </button>
@@ -741,7 +835,7 @@ export default function QuestionBank() {
                 <button
                   type="button"
                   className="qf-btn qf-btn--primary"
-                  onClick={() => { resetAddForm(); setIsAddOpen(true); }}
+                  onClick={() => { handleCancelDraft(); setIsConstructorOpen(true); }}
                 >
                   <Plus size={15} /> Add question
                 </button>
@@ -770,7 +864,12 @@ export default function QuestionBank() {
                     {q.marks ? <span className="qf-chip">{q.marks} mark{q.marks === 1 ? '' : 's'}</span> : null}
                     {q.subCount > 0 && <span className="qf-chip"><Layers size={12} /> {q.subCount} parts</span>}
                   </div>
-                  <p className="qf-q-card__text">{q.preview || 'Image / formula question'}</p>
+                  <div
+                    className="qf-q-card__text tex2jax_process"
+                    dangerouslySetInnerHTML={{
+                      __html: preprocessMathHtml(q.content) || '<span style="color:var(--qf-text-3)">Empty question</span>',
+                    }}
+                  />
                   <div className="qf-q-card__foot">
                     <span className="qf-q-card__ctx">{[q.subject, q.klass, q.chapter || q.topic].filter(Boolean).join(' · ') || 'Uncategorised'}</span>
                     {tab !== 'mine' ? (
@@ -813,11 +912,38 @@ export default function QuestionBank() {
               {viewing.courseName && <span className="qf-chip">{viewing.courseName}</span>}
               {viewing.category && <span className="qf-chip">{viewing.category}</span>}
             </div>
-            <div className="qf-q-view__content" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(viewing.content) }} />
+            <div className="qf-q-view__content tex2jax_process" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(viewing.content) }} />
             {viewing.questionType === 'mcq' && viewing.options.length > 0 && (
-              <ol className="qf-q-view__options" type="A">
+              <ol className="qf-q-view__options tex2jax_process" type="A">
                 {viewing.options.map((o, i) => <li key={i} dangerouslySetInnerHTML={{ __html: preprocessMathHtml(o) }} />)}
               </ol>
+            )}
+
+            {viewing.subquestions && viewing.subquestions.length > 0 && (
+              <div className="qf-q-view__subquestions" style={{ marginTop: 16, borderTop: '1px solid var(--qf-border)', paddingTop: 14 }}>
+                <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--qf-text-2)' }}>
+                  Sub-questions ({viewing.subquestions.length})
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {viewing.subquestions.map((sq: any, sidx: number) => (
+                    <div key={sq.id || sidx} style={{ padding: '10px 12px', background: 'var(--qf-surface-2, rgba(0,0,0,0.02))', borderRadius: 6, border: '1px solid var(--qf-border)' }}>
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700 }}>Part {sidx + 1}</span>
+                        {sq.marks ? <span className="qf-chip" style={{ fontSize: 11, padding: '1px 6px' }}>{sq.marks} mark{sq.marks === 1 ? '' : 's'}</span> : null}
+                        {sq.isOptional && <span className="qf-chip" style={{ fontSize: 11, padding: '1px 6px' }}>Optional</span>}
+                      </div>
+                      <div className="tex2jax_process" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(sq.content) }} />
+                      {sq.options && sq.options.length > 0 && (
+                        <ol type="A" style={{ marginTop: 6, paddingLeft: 18 }} className="tex2jax_process">
+                          {sq.options.map((opt: string, oi: number) => (
+                            <li key={oi} dangerouslySetInnerHTML={{ __html: preprocessMathHtml(opt) }} />
+                          ))}
+                        </ol>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             {viewing.author && (
               <p className="qf-q-view__by">Contributed by <strong>{viewing.author}</strong> · used {viewing.usageCount || 0} times</p>
@@ -880,225 +1006,705 @@ export default function QuestionBank() {
         )}
       </Dialog>
 
-      {/* Create / Add Question Dialog */}
-      <Dialog open={isAddOpen} onClose={() => setIsAddOpen(false)} size="lg" title="Add Question to Question Bank">
-        <form
-          className="qf-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSaveNewQuestion();
-          }}
-        >
-          {createError && <div className="qf-form__error">{createError}</div>}
+      {/* QUESTION BANK CONSTRUCTOR MODAL */}
+      {isConstructorOpen && (
+        <div className="modal-overlay" onClick={handleCancelDraft}>
+          <div
+            className="modal question-editor-modal"
+            style={{ maxWidth: '820px', height: '88vh', display: 'flex', flexDirection: 'column' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <h2 className="modal-title">Question Bank Constructor</h2>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Configure question details, taxonomy, options, and nested subquestions
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close-btn"
+                onClick={handleCancelDraft}
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-          {/* Question Type */}
-          <div className="qf-field">
-            <label className="qf-label">Question Type</label>
-            <select
-              className="qf-input qf-select"
-              value={newType}
-              onChange={(e) => setNewType(e.target.value as QuestionType)}
-            >
-              {Object.entries(QUESTION_TYPE_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>{v}</option>
-              ))}
-            </select>
-          </div>
+            <div className="modal-content" style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+              {createError && (
+                <div className="qf-form__error" style={{ marginBottom: 16 }}>
+                  {createError}
+                </div>
+              )}
 
-          {/* Content */}
-          <div className="qf-field">
-            <label className="qf-label">Question Content / Text</label>
-            <FullQuill
-              value={newContent}
-              onChange={setNewContent}
-              placeholder="Enter question content... (Click the ∑ button in the toolbar to insert formulas)"
-              toolbarId="qb-question-toolbar"
-            />
-          </div>
+              {/* Top row: Question Type, Marks, Difficulty, Optional */}
+              <div style={{ display: 'flex', gap: 12, marginBottom: 15, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div className="property-field" style={{ flex: 1, minWidth: 160, marginBottom: 0 }}>
+                  <label className="property-label">Question Type</label>
+                  <select
+                    className="property-input"
+                    value={draftType}
+                    onChange={(e) => setDraftType(e.target.value as QuestionType)}
+                  >
+                    <option value="subjective">Subjective</option>
+                    <option value="mcq">Multiple Choice</option>
+                    <option value="text">Text / Reading Passage (No Marks)</option>
+                  </select>
+                </div>
 
-          {/* MCQ Options */}
-          {newType === 'mcq' && (
-            <div className="qf-field">
-              <label className="qf-label">Options</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {newOptions.map((opt, i) => (
-                  <div key={i} className="qf-mcq-option-row" style={{ alignItems: 'flex-start' }}>
-                    <span className="qf-mcq-option-badge" style={{ marginTop: 8 }}>{String.fromCharCode(65 + i)}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                {draftType !== 'text' && (
+                  <div className="property-field" style={{ flex: 1, minWidth: 100, marginBottom: 0 }}>
+                    <label className="property-label">Marks</label>
+                    <input
+                      type="number"
+                      className="property-input"
+                      value={draftMarks}
+                      onChange={(e) => setDraftMarks(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      min={1}
+                    />
+                  </div>
+                )}
+
+                <div className="property-field" style={{ flex: 1, minWidth: 130, marginBottom: 0 }}>
+                  <label className="property-label">Difficulty</label>
+                  <select
+                    className="property-input"
+                    value={draftDifficulty}
+                    onChange={(e) => setDraftDifficulty(e.target.value as Difficulty)}
+                  >
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                  </select>
+                </div>
+
+                <div className="property-field" style={{ flex: '0 0 auto', marginBottom: 0, paddingBottom: 6 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={draftIsOptional}
+                      onChange={(e) => setDraftIsOptional(e.target.checked)}
+                    />
+                    <span>Optional Question</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Question Classification & Taxonomy Card */}
+              <div
+                style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 8,
+                  padding: '12px 14px',
+                  marginBottom: 15,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
+                    Question Classification & Taxonomy
+                  </span>
+                  <span style={{ fontSize: 11, color: '#2563eb', fontWeight: 600 }}>
+                    Classify & tag for reuse across papers
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                  {/* Course Dropdown */}
+                  <div>
+                    <label className="property-label" style={{ fontSize: 11, marginBottom: 2 }}>Course / Board</label>
+                    <select
+                      className="property-input"
+                      style={{ fontSize: 12, padding: '5px 8px' }}
+                      value={draftCourseId}
+                      onChange={(e) => setDraftCourseId(e.target.value)}
+                    >
+                      <option value="">No Course / Board</option>
+                      {courses.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Subject Dropdown */}
+                  <div>
+                    <label className="property-label" style={{ fontSize: 11, marginBottom: 2 }}>Subject</label>
+                    <select
+                      className="property-input"
+                      style={{ fontSize: 12, padding: '5px 8px' }}
+                      value={draftSubjectId}
+                      onChange={(e) => {
+                        setDraftSubjectId(e.target.value);
+                        if (draftChapterId) {
+                          const ch = chapters.find((c) => c.id === draftChapterId);
+                          if (ch && ch.subjectId && ch.subjectId !== e.target.value) {
+                            setDraftChapterId('');
+                            setDraftTopicId('');
+                          }
+                        }
+                      }}
+                    >
+                      <option value="">No Subject</option>
+                      {subjects.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Chapter Dropdown */}
+                  <div>
+                    <label className="property-label" style={{ fontSize: 11, marginBottom: 2 }}>Chapter</label>
+                    {isAddingChapter ? (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input
+                          type="text"
+                          className="property-input"
+                          style={{ fontSize: 12, padding: '4px 8px' }}
+                          autoFocus
+                          placeholder="New chapter..."
+                          value={newChapterName}
+                          onChange={(e) => setNewChapterName(e.target.value)}
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter' && newChapterName.trim()) {
+                              const cId = await createChapter(newChapterName.trim(), draftSubjectId || undefined);
+                              if (cId) setDraftChapterId(cId);
+                              setIsAddingChapter(false);
+                              setNewChapterName('');
+                            } else if (e.key === 'Escape') {
+                              setIsAddingChapter(false);
+                              setNewChapterName('');
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{ padding: '4px 8px', fontSize: 11 }}
+                          onClick={async () => {
+                            if (newChapterName.trim()) {
+                              const cId = await createChapter(newChapterName.trim(), draftSubjectId || undefined);
+                              if (cId) setDraftChapterId(cId);
+                            }
+                            setIsAddingChapter(false);
+                            setNewChapterName('');
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 6px', fontSize: 11 }}
+                          onClick={() => { setIsAddingChapter(false); setNewChapterName(''); }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        className="property-input"
+                        style={{ fontSize: 12, padding: '5px 8px' }}
+                        value={draftChapterId}
+                        onChange={(e) => {
+                          if (e.target.value === '__ADD_NEW__') {
+                            setIsAddingChapter(true);
+                          } else {
+                            setDraftChapterId(e.target.value);
+                            if (draftTopicId) {
+                              const tp = topics.find((t) => t.id === draftTopicId);
+                              if (tp && tp.chapterId && tp.chapterId !== e.target.value) {
+                                setDraftTopicId('');
+                              }
+                            }
+                          }
+                        }}
+                      >
+                        <option value="">Select Chapter (Optional)</option>
+                        {chapters
+                          .filter((ch) => !draftSubjectId || !ch.subjectId || ch.subjectId === draftSubjectId)
+                          .map((ch) => (
+                            <option key={ch.id} value={ch.id}>{ch.name}</option>
+                          ))}
+                        <option value="__ADD_NEW__">+ Add New Chapter...</option>
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Topic Dropdown */}
+                  <div>
+                    <label className="property-label" style={{ fontSize: 11 }}>Topic</label>
+                    {isAddingTopic ? (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input
+                          type="text"
+                          className="property-input"
+                          style={{ fontSize: 12, padding: '4px 8px' }}
+                          autoFocus
+                          placeholder="New topic..."
+                          value={newTopicName}
+                          onChange={(e) => setNewTopicName(e.target.value)}
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter' && newTopicName.trim()) {
+                              const tId = await createTopic(newTopicName.trim(), draftChapterId || undefined);
+                              if (tId) setDraftTopicId(tId);
+                              setIsAddingTopic(false);
+                              setNewTopicName('');
+                            } else if (e.key === 'Escape') {
+                              setIsAddingTopic(false);
+                              setNewTopicName('');
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{ padding: '4px 8px', fontSize: 11 }}
+                          onClick={async () => {
+                            if (newTopicName.trim()) {
+                              const tId = await createTopic(newTopicName.trim(), draftChapterId || undefined);
+                              if (tId) setDraftTopicId(tId);
+                            }
+                            setIsAddingTopic(false);
+                            setNewTopicName('');
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 6px', fontSize: 11 }}
+                          onClick={() => { setIsAddingTopic(false); setNewTopicName(''); }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        className="property-input"
+                        style={{ fontSize: 12, padding: '5px 8px' }}
+                        value={draftTopicId}
+                        onChange={(e) => {
+                          if (e.target.value === '__ADD_NEW__') {
+                            setIsAddingTopic(true);
+                          } else {
+                            setDraftTopicId(e.target.value);
+                          }
+                        }}
+                      >
+                        <option value="">Select Topic (Optional)</option>
+                        {topics
+                          .filter((tp) => !draftChapterId || !tp.chapterId || tp.chapterId === draftChapterId)
+                          .map((tp) => (
+                            <option key={tp.id} value={tp.id}>{tp.name}</option>
+                          ))}
+                        <option value="__ADD_NEW__">+ Add New Topic...</option>
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Category / Stream */}
+                  <div>
+                    <label className="property-label" style={{ fontSize: 11 }}>Stream / Category</label>
+                    {isAddingCategory ? (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input
+                          type="text"
+                          className="property-input"
+                          style={{ fontSize: 12, padding: '4px 8px' }}
+                          autoFocus
+                          placeholder="New stream/category..."
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter' && newCategoryName.trim()) {
+                              const catId = await createCategory(newCategoryName.trim());
+                              if (catId) setDraftCategoryId(catId);
+                              setIsAddingCategory(false);
+                              setNewCategoryName('');
+                            } else if (e.key === 'Escape') {
+                              setIsAddingCategory(false);
+                              setNewCategoryName('');
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{ padding: '4px 8px', fontSize: 11 }}
+                          onClick={async () => {
+                            if (newCategoryName.trim()) {
+                              const catId = await createCategory(newCategoryName.trim());
+                              if (catId) setDraftCategoryId(catId);
+                            }
+                            setIsAddingCategory(false);
+                            setNewCategoryName('');
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 6px', fontSize: 11 }}
+                          onClick={() => { setIsAddingCategory(false); setNewCategoryName(''); }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        className="property-input"
+                        style={{ fontSize: 12, padding: '5px 8px' }}
+                        value={draftCategoryId}
+                        onChange={(e) => {
+                          if (e.target.value === '__ADD_NEW__') {
+                            setIsAddingCategory(true);
+                          } else {
+                            setDraftCategoryId(e.target.value);
+                          }
+                        }}
+                      >
+                        <option value="">Select Stream / Category (Optional)</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                        <option value="__ADD_NEW__">+ Add New Stream/Category...</option>
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Cognitive Level Dropdown */}
+                  <div>
+                    <label className="property-label" style={{ fontSize: 11 }}>Cognitive Level (Bloom's)</label>
+                    <select
+                      className="property-input"
+                      style={{ fontSize: 12, padding: '5px 8px' }}
+                      value={draftCognitiveLevel}
+                      onChange={(e) => setDraftCognitiveLevel(e.target.value as CognitiveLevel)}
+                    >
+                      {COGNITIVE_LEVELS.map((cl) => (
+                        <option key={cl.value} value={cl.value}>
+                          {cl.label}{cl.value === 'understand' ? ' (Default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Sub-question Numbering Style */}
+                  <div>
+                    <label className="property-label" style={{ fontSize: 11 }}>Sub-question Numbering</label>
+                    <select
+                      className="property-input"
+                      style={{ fontSize: 12, padding: '5px 8px' }}
+                      value={draftSubNumberingStyle}
+                      onChange={(e) => setDraftSubNumberingStyle(e.target.value as SubQuestionNumberingStyle)}
+                    >
+                      <option value="">Default ((a), (b), (c))</option>
+                      <option value="letters_paren">(a), (b), (c)</option>
+                      <option value="roman_paren">(i), (ii), (iii)</option>
+                      <option value="numbers_paren">1), 2), 3)</option>
+                      <option value="numbers_paren_both">(1), (2), (3)</option>
+                      <option value="letters_dot">a., b., c.</option>
+                      <option value="roman_dot">i., ii., iii.</option>
+                      <option value="letters_upper_paren">(A), (B), (C)</option>
+                      <option value="letters_upper_dot">A., B., C.</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Question Content Editor */}
+              <div className="property-field" style={{ marginBottom: 15 }}>
+                <label className="property-label">
+                  {draftType === 'text' ? 'Passage / Text Content' : 'Question Content'}
+                </label>
+                <FullQuill
+                  value={draftContent}
+                  onChange={setDraftContent}
+                  placeholder={draftType === 'text' ? 'Enter reading passage or instructions...' : 'Enter your question... (Click the ∑ button in the toolbar to insert formulas)'}
+                  toolbarId="qb-constructor-main-toolbar"
+                />
+              </div>
+
+              {/* MCQ Options */}
+              {draftType === 'mcq' && (
+                <div className="property-field" style={{ marginBottom: 15 }}>
+                  <label className="property-label">Options</label>
+                  {draftOptions.map((opt, i) => (
+                    <div key={i} style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Option {String.fromCharCode(65 + i)}</label>
+                        {draftOptions.length > 2 && (
+                          <button
+                            type="button"
+                            className="hover-action-btn danger"
+                            onClick={() => handleRemoveOption(i)}
+                            style={{ padding: '2px 4px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger, #dc2626)' }}
+                            title="Remove Option"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
                       <FullQuill
                         value={opt}
                         onChange={(val) => {
-                          const next = [...newOptions];
-                          next[i] = val;
-                          setNewOptions(next);
+                          const newOpts = [...draftOptions];
+                          newOpts[i] = val;
+                          setDraftOptions(newOpts);
                         }}
                         placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                        toolbarId={`qb-opt-toolbar-${i}`}
+                        toolbarId={`qb-draft-opt-toolbar-${i}`}
                         isMini
-                        minHeight="60px"
+                        minHeight="54px"
                       />
                     </div>
-                    {newOptions.length > 2 && (
+                  ))}
+                  {draftOptions.length < 8 && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleAddOption}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}
+                    >
+                      <Plus size={14} /> Add Option
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Subquestions Management */}
+              <div
+                style={{
+                  marginTop: 20,
+                  paddingLeft: 16,
+                  borderLeft: '2px solid var(--border-color)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label className="property-label" style={{ marginBottom: 0 }}>
+                    Subquestions {draftSubquestions.length > 0 ? `(${draftSubquestions.length})` : ''}
+                  </label>
+                </div>
+
+                {draftSubquestions.map((sq, index) => (
+                  <div
+                    key={sq.id}
+                    style={{
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 8,
+                      position: 'relative',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      onClick={() => handleUpdateDraftSubquestion(sq.id, 'isExpanded', !sq.isExpanded)}
+                      style={{
+                        padding: '12px 15px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        backgroundColor: sq.isExpanded ? 'var(--bg-tertiary)' : 'transparent',
+                        borderBottom: sq.isExpanded ? '1px solid var(--border-color)' : 'none',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, overflow: 'hidden' }}>
+                        {sq.isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        <span style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                          Subquestion {index + 1}
+                        </span>
+                        {sq.isOptional && (
+                          <span className="optional-badge" style={{ fontSize: 10, padding: '1px 6px' }}>Optional</span>
+                        )}
+                        {!sq.isExpanded && sq.content && (
+                          <span style={{ fontSize: 13, color: 'var(--text-tertiary)', marginLeft: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                            {sq.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ') || 'Empty question'}
+                          </span>
+                        )}
+                      </div>
                       <button
                         type="button"
-                        className="qf-icon-btn qf-icon-btn--sm"
-                        style={{ marginTop: 8 }}
-                        title="Remove option"
-                        onClick={() => setNewOptions(newOptions.filter((_, idx) => idx !== i))}
+                        className="hover-action-btn danger"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveDraftSubquestion(sq.id);
+                        }}
+                        style={{ marginLeft: 10, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger, #dc2626)' }}
+                        title="Delete subquestion"
                       >
                         <Trash2 size={14} />
                       </button>
+                    </div>
+
+                    {sq.isExpanded && (
+                      <div style={{ padding: '15px' }}>
+                        <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <div className="property-field" style={{ flex: 1, minWidth: 120, marginBottom: 0 }}>
+                            <label className="property-label">Question Type</label>
+                            <select
+                              className="property-input"
+                              value={sq.type}
+                              onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'type', e.target.value as QuestionType)}
+                            >
+                              <option value="subjective">Subjective</option>
+                              <option value="mcq">Multiple Choice</option>
+                              <option value="text">Text / Reading Passage</option>
+                            </select>
+                          </div>
+                          {sq.type !== 'text' && (
+                            <div className="property-field" style={{ flex: 1, minWidth: 80, marginBottom: 0 }}>
+                              <label className="property-label">Marks</label>
+                              <input
+                                type="number"
+                                className="property-input"
+                                value={sq.marks}
+                                onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'marks', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                min={1}
+                              />
+                            </div>
+                          )}
+                          <div className="property-field" style={{ flex: 1, minWidth: 130, marginBottom: 0 }}>
+                            <label className="property-label">Cognitive Level</label>
+                            <select
+                              className="property-input"
+                              value={sq.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL}
+                              onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'cognitiveLevel', e.target.value as CognitiveLevel)}
+                            >
+                              {COGNITIVE_LEVELS.map((cl) => (
+                                <option key={cl.value} value={cl.value}>
+                                  {cl.label}{cl.value === 'understand' ? ' (Default)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="property-field" style={{ flex: 1, minWidth: 140, marginBottom: 0 }}>
+                            <label className="property-label">Child Sub-Q Format</label>
+                            <select
+                              className="property-input"
+                              value={sq.subNumberingStyle || ''}
+                              onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'subNumberingStyle', (e.target.value || undefined) as any)}
+                            >
+                              <option value="">Inherit</option>
+                              <option value="letters_paren">(a), (b), (c)</option>
+                              <option value="roman_paren">(i), (ii), (iii)</option>
+                              <option value="numbers_paren">1), 2), 3)</option>
+                              <option value="numbers_paren_both">(1), (2), (3)</option>
+                              <option value="letters_dot">a., b., c.</option>
+                              <option value="roman_dot">i., ii., iii.</option>
+                              <option value="letters_upper_paren">(A), (B), (C)</option>
+                              <option value="letters_upper_dot">A., B., C.</option>
+                            </select>
+                          </div>
+                          <div className="property-field" style={{ flex: '0 0 auto', marginBottom: 0, paddingBottom: 6 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, userSelect: 'none' }}>
+                              <input
+                                type="checkbox"
+                                checked={sq.isOptional || false}
+                                onChange={(e) => handleUpdateDraftSubquestion(sq.id, 'isOptional', e.target.checked)}
+                              />
+                              <span>Optional</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="property-field" style={{ marginBottom: sq.type === 'mcq' ? 12 : 0 }}>
+                          <label className="property-label">Question Content</label>
+                          <FullQuill
+                            value={sq.content}
+                            onChange={(val) => handleUpdateDraftSubquestion(sq.id, 'content', val)}
+                            placeholder="Enter subquestion..."
+                            toolbarId={`qb-subq-toolbar-${sq.id}`}
+                            isMini
+                            minHeight="60px"
+                          />
+                        </div>
+
+                        {sq.type === 'mcq' && (
+                          <div className="property-field" style={{ marginBottom: 0 }}>
+                            <label className="property-label">Options</label>
+                            {sq.options.map((opt, i) => (
+                              <div key={i} style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <span style={{ fontSize: 12, color: 'var(--text-secondary)', width: 16 }}>
+                                  {String.fromCharCode(65 + i)}
+                                </span>
+                                <div style={{ flex: 1 }}>
+                                  <FullQuill
+                                    value={opt}
+                                    onChange={(val) => {
+                                      const newOpts = [...sq.options];
+                                      newOpts[i] = val;
+                                      handleUpdateDraftSubquestion(sq.id, 'options', newOpts);
+                                    }}
+                                    placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                                    toolbarId={`qb-subq-opt-toolbar-${sq.id}-${i}`}
+                                    isMini
+                                    minHeight="50px"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
-                {newOptions.length < 8 && (
-                  <button
-                    type="button"
-                    className="qf-btn qf-btn--ghost qf-btn--sm"
-                    style={{ alignSelf: 'flex-start' }}
-                    onClick={() => setNewOptions([...newOptions, ''])}
-                  >
-                    <Plus size={13} /> Add another option
-                  </button>
-                )}
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+                  onClick={handleAddDraftSubquestion}
+                >
+                  <Plus size={14} /> Add Subquestion
+                </button>
               </div>
             </div>
-          )}
 
-          {/* Marks, Difficulty, Cognitive Level */}
-          <div className="qf-form-row-3">
-            <div className="qf-field">
-              <label className="qf-label">Marks</label>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                className="qf-input"
-                value={newMarks}
-                onChange={(e) => setNewMarks(Math.max(0, parseInt(e.target.value, 10) || 0))}
-              />
-            </div>
-            <div className="qf-field">
-              <label className="qf-label">Difficulty</label>
-              <select
-                className="qf-input qf-select"
-                value={newDifficulty}
-                onChange={(e) => setNewDifficulty(e.target.value as Difficulty)}
-              >
-                {Object.entries(DIFFICULTY_LABEL).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-            </div>
-            <div className="qf-field">
-              <label className="qf-label">Cognitive Level (Bloom's)</label>
-              <select
-                className="qf-input qf-select"
-                value={newCognitiveLevel}
-                onChange={(e) => setNewCognitiveLevel(e.target.value as CognitiveLevel)}
-              >
-                {COGNITIVE_LEVELS.map((cl) => (
-                  <option key={cl.value} value={cl.value}>{cl.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Taxonomy Details */}
-          <div className="qf-form-row-3">
-            <div className="qf-field">
-              <label className="qf-label">Subject</label>
-              <select
-                className="qf-input qf-select"
-                value={newSubjectId}
-                onChange={(e) => setNewSubjectId(e.target.value)}
-              >
-                <option value="">Select subject...</option>
-                {subjects.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="qf-field">
-              <label className="qf-label">Class / Grade</label>
-              <select
-                className="qf-input qf-select"
-                value={newClassId}
-                onChange={(e) => setNewClassId(e.target.value)}
-              >
-                <option value="">Select class...</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="qf-field">
-              <label className="qf-label">Chapter</label>
-              <input
-                type="text"
-                className="qf-input"
-                placeholder="e.g. Thermodynamics"
-                value={newChapter}
-                onChange={(e) => setNewChapter(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="qf-form-row-3">
-            <div className="qf-field">
-              <label className="qf-label">Topic</label>
-              <input
-                type="text"
-                className="qf-input"
-                placeholder="e.g. Carnot Cycle"
-                value={newTopic}
-                onChange={(e) => setNewTopic(e.target.value)}
-              />
-            </div>
-            <div className="qf-field">
-              <label className="qf-label">Course / Board</label>
-              <select
-                className="qf-input qf-select"
-                value={newCourseId}
-                onChange={(e) => setNewCourseId(e.target.value)}
-              >
-                <option value="">Select board / course...</option>
-                {courses.map((co) => (
-                  <option key={co.id} value={co.id}>{co.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="qf-field">
-              <label className="qf-label">Stream / Category</label>
-              <input
-                type="text"
-                className="qf-input"
-                placeholder="e.g. Science / CBSE"
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="qf-form__actions" style={{ marginTop: 12 }}>
-            <button
-              type="button"
-              className="qf-btn qf-btn--ghost"
-              onClick={() => setIsAddOpen(false)}
+            {/* Modal Actions */}
+            <div
+              className="modal-actions"
+              style={{
+                padding: '15px 20px',
+                borderTop: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-secondary)',
+                flexShrink: 0,
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 10,
+              }}
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="qf-btn qf-btn--primary"
-              disabled={isCreatingQuestion}
-            >
-              {isCreatingQuestion ? <Loader2 size={14} className="qf-spin" /> : <Plus size={14} />}
-              {isCreatingQuestion ? 'Saving...' : 'Save Question'}
-            </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleCancelDraft}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleSaveDraftQuestion}
+                disabled={isCreatingQuestion || !draftContent.trim()}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                {isCreatingQuestion ? <Loader2 size={14} className="qf-spin" /> : <Plus size={14} />}
+                {isCreatingQuestion ? 'Saving Question...' : 'Save Question & Subquestions'}
+              </button>
+            </div>
           </div>
-        </form>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
 }
