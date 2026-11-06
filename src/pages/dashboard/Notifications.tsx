@@ -3,7 +3,7 @@ import { Bell, CheckCheck, Trash2, Sparkles } from 'lucide-react';
 import { useStore } from '../../store';
 import { PageHeader, EmptyState } from './components';
 import Dialog from './Dialog';
-import { relativeTime, stripHtml } from './utils';
+import { relativeTime, stripHtml, cleanNotificationMessage } from './utils';
 
 type Filter = 'all' | 'unread';
 
@@ -80,7 +80,7 @@ export default function Notifications() {
                           <span className="qf-notif-item__title">{n.title}</span>
                           <span className="qf-notif-item__time">{relativeTime(n.createdAt)}</span>
                         </span>
-                        <span className="qf-notif-item__msg">{n.message}</span>
+                        <span className="qf-notif-item__msg">{cleanNotificationMessage(n.message)}</span>
                         {n.questionContent && <span className="qf-notif-item__quote">{stripHtml(n.questionContent)}</span>}
                       </span>
                       {!n.read && <span className="qf-notif-item__dot" aria-label="Unread" />}

@@ -118,10 +118,33 @@ function saveLocalSharedQuestions(list: SharedQuestion[]) {
   } catch {}
 }
 
+function cleanTextForNotif(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<span[^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*data-value=["']([^"']*)["'][^>]*>[\s\S]*?<\/span>/gi, ' \\($1\\) ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function getStoredLocalNotifications(): AppNotification[] {
   try {
     const raw = localStorage.getItem(LOCAL_NOTIFICATIONS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((n: AppNotification) => ({
+          ...n,
+          message: (n.message || '').replace(/&nbsp;/gi, ' '),
+        }));
+      }
+    }
   } catch {}
   return [];
 }
@@ -576,7 +599,7 @@ export const useStore = create<AppState>()((set, get) => ({
           senderId: n.sender_id,
           senderName: n.sender_name || 'Educator',
           title: n.title,
-          message: n.message,
+          message: (n.message || '').replace(/&nbsp;/gi, ' '),
           questionContent: n.question_content,
           createdAt: new Date(n.created_at).getTime(),
           read: n.read || false,
@@ -1590,7 +1613,7 @@ export const useStore = create<AppState>()((set, get) => ({
   sendQuestionUsageNotification: async (sharedQ: SharedQuestion) => {
     const { user } = get();
     const senderName = user?.fullName || 'Another Educator';
-    const cleanContent = sharedQ.content.replace(/<[^>]*>/g, '').trim().substring(0, 100);
+    const cleanContent = cleanTextForNotif(sharedQ.content).substring(0, 100);
 
     const notifId = generateId();
     const newNotif: AppNotification = {

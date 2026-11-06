@@ -104,7 +104,18 @@ export function stripHtml(html: string) {
   );
   const tmp = document.createElement('div');
   tmp.innerHTML = withLatex;
-  return (tmp.textContent || '').replace(/\s+/g, ' ').trim();
+  return (tmp.textContent || '').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+
+export function cleanNotificationMessage(msg: string): string {
+  if (!msg) return '';
+  return msg
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
 }
 
 export const QUESTION_TYPE_LABEL: Record<QuestionType, string> = {

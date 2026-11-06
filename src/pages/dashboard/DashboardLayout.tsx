@@ -8,7 +8,7 @@ import { useStore } from '../../store';
 import { supabase } from '../../supabase';
 import NewPaperDialog from './NewPaperDialog';
 import Menu, { useClickOutside } from './Menu';
-import { initials, relativeTime } from './utils';
+import { initials, relativeTime, cleanNotificationMessage } from './utils';
 import { toggleColorScheme } from './theme';
 import './dashboard.css';
 
@@ -70,7 +70,7 @@ function NotificationsPopover() {
                   <span className="qf-notif-row__dot" aria-hidden />
                   <span className="qf-notif-row__body">
                     <span className="qf-notif-row__title">{n.title}</span>
-                    <span className="qf-notif-row__msg">{n.message}</span>
+                    <span className="qf-notif-row__msg">{cleanNotificationMessage(n.message)}</span>
                     <span className="qf-notif-row__time">{relativeTime(n.createdAt)}</span>
                   </span>
                 </button>
