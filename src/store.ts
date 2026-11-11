@@ -22,6 +22,14 @@ import { DEFAULT_COGNITIVE_LEVEL } from './types';
 import { supabase } from './supabase';
 import { computeContentHash, calculateTextSimilarity } from './utils/sharedBank';
 import { INITIAL_SHARED_QUESTIONS } from './utils/seedSharedQuestions';
+import {
+  clearGuestWorkspace,
+  createGuestUser,
+  hasGuestWorkspaceData,
+  isGuestUser,
+  loadGuestWorkspace,
+  saveGuestWorkspace,
+} from './utils/guestWorkspace';
 
 const LOCAL_SHARED_QUESTIONS_KEY = 'questforma_shared_questions_v1';
 const LOCAL_NOTIFICATIONS_KEY = 'questforma_notifications_v1';
@@ -172,6 +180,8 @@ interface AppState {
   loading: boolean;
   
   setUser: (user: User | null) => void;
+  enterGuestMode: () => void;
+  syncGuestWorkspaceToAccount: (realUserId: string) => Promise<void>;
   setCurrentPaper: (id: string | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
@@ -266,17 +276,37 @@ interface AppState {
 
 const generateId = () => crypto.randomUUID();
 
+const initialStoredUser = getStoredLocalUser();
+const initialGuestData = isGuestUser(initialStoredUser) ? loadGuestWorkspace() : null;
+
+function persistGuestSnapshot(state: AppState) {
+  if (!isGuestUser(state.user)) return;
+  saveGuestWorkspace({
+    courses: state.courses,
+    subjects: state.subjects,
+    classes: state.classes,
+    chapters: state.chapters,
+    topics: state.topics,
+    categories: state.categories,
+    questionPapers: state.questionPapers,
+    questions: state.questions,
+    paperQuestionsEntries: Array.from(state.paperQuestions.entries()),
+  });
+}
+
+let guestMigrationPromise: Promise<void> | null = null;
+
 export const useStore = create<AppState>()((set, get) => ({
-  user: getStoredLocalUser(),
-  courses: [],
-  subjects: [],
-  classes: [],
-  chapters: [],
-  topics: [],
-  categories: [],
-  questionPapers: [],
-  questions: [],
-  paperQuestions: new Map(),
+  user: initialStoredUser,
+  courses: initialGuestData?.courses || [],
+  subjects: initialGuestData?.subjects || [],
+  classes: initialGuestData?.classes || [],
+  chapters: initialGuestData?.chapters || [],
+  topics: initialGuestData?.topics || [],
+  categories: initialGuestData?.categories || [],
+  questionPapers: initialGuestData?.questionPapers || [],
+  questions: initialGuestData?.questions || [],
+  paperQuestions: new Map(initialGuestData?.paperQuestionsEntries || []),
   sharedQuestions: getStoredLocalSharedQuestions(),
   notifications: getStoredLocalNotifications(),
   currentPaperId: null,
@@ -286,9 +316,192 @@ export const useStore = create<AppState>()((set, get) => ({
     saveLocalUser(user);
     set({ user });
   },
+  enterGuestMode: () => {
+    const existing = get().user;
+    if (existing && !isGuestUser(existing)) return;
+    const guestUser = isGuestUser(existing) && existing ? existing : createGuestUser();
+    const guestData = loadGuestWorkspace();
+    saveLocalUser(guestUser);
+    set({
+      user: guestUser,
+      courses: guestData.courses,
+      subjects: guestData.subjects,
+      classes: guestData.classes,
+      chapters: guestData.chapters,
+      topics: guestData.topics,
+      categories: guestData.categories,
+      questionPapers: guestData.questionPapers,
+      questions: guestData.questions,
+      paperQuestions: new Map(guestData.paperQuestionsEntries),
+      loading: false,
+    });
+  },
+  syncGuestWorkspaceToAccount: async (realUserId: string) => {
+    if (!hasGuestWorkspaceData()) {
+      clearGuestWorkspace();
+      return;
+    }
+    if (guestMigrationPromise) return guestMigrationPromise;
+
+    guestMigrationPromise = (async () => {
+      try {
+        const guest = loadGuestWorkspace();
+
+        // Fetch existing lookups for the target account so we never hit unique(teacher_id, name) conflicts
+        const [exCoursesRes, exSubjectsRes, exClassesRes] = await Promise.all([
+          supabase.from('courses').select('id, name').eq('teacher_id', realUserId),
+          supabase.from('subjects').select('id, name').eq('teacher_id', realUserId),
+          supabase.from('classes').select('id, name').eq('teacher_id', realUserId),
+        ]);
+
+        const courseIdMap = new Map<string, string>();
+        const exCourses = exCoursesRes.data || [];
+        for (const c of guest.courses) {
+          const match = exCourses.find(e => e.name.toLowerCase() === c.name.toLowerCase());
+          if (match) {
+            courseIdMap.set(c.id, match.id);
+          } else {
+            const used = guest.questionPapers.some(p => p.courseId === c.id) || guest.questions.some(q => q.courseId === c.id);
+            if (used) {
+              const { error } = await supabase.from('courses').insert({ id: c.id, teacher_id: realUserId, name: c.name });
+              courseIdMap.set(c.id, error ? c.id : c.id);
+            }
+          }
+        }
+
+        const subjectIdMap = new Map<string, string>();
+        const exSubjects = exSubjectsRes.data || [];
+        for (const s of guest.subjects) {
+          const match = exSubjects.find(e => e.name.toLowerCase() === s.name.toLowerCase());
+          if (match) {
+            subjectIdMap.set(s.id, match.id);
+          } else {
+            const used = guest.questionPapers.some(p => p.subjectId === s.id) || guest.questions.some(q => q.subjectId === s.id);
+            if (used) {
+              await supabase.from('subjects').insert({ id: s.id, teacher_id: realUserId, name: s.name });
+              subjectIdMap.set(s.id, s.id);
+            }
+          }
+        }
+
+        const classIdMap = new Map<string, string>();
+        const exClasses = exClassesRes.data || [];
+        for (const cl of guest.classes) {
+          const match = exClasses.find(e => e.name.toLowerCase() === cl.name.toLowerCase());
+          if (match) {
+            classIdMap.set(cl.id, match.id);
+          } else {
+            const used = guest.questionPapers.some(p => p.classId === cl.id) || guest.questions.some(q => q.classId === cl.id);
+            if (used) {
+              await supabase.from('classes').insert({ id: cl.id, teacher_id: realUserId, name: cl.name });
+              classIdMap.set(cl.id, cl.id);
+            }
+          }
+        }
+
+        // Insert custom chapters / topics / categories
+        for (const ch of guest.chapters) {
+          await supabase.from('chapters').upsert({
+            id: ch.id,
+            teacher_id: realUserId,
+            name: ch.name,
+            subject_id: (ch.subjectId && subjectIdMap.get(ch.subjectId)) || ch.subjectId || null,
+          });
+        }
+        for (const tp of guest.topics) {
+          await supabase.from('topics').upsert({
+            id: tp.id,
+            teacher_id: realUserId,
+            name: tp.name,
+            chapter_id: tp.chapterId || null,
+          });
+        }
+        for (const ct of guest.categories) {
+          await supabase.from('categories').upsert({
+            id: ct.id,
+            teacher_id: realUserId,
+            name: ct.name,
+          });
+        }
+
+        // Insert guest questions (parents first, then children)
+        const parentQs = guest.questions.filter(q => !q.parentId);
+        const childQs = guest.questions.filter(q => q.parentId);
+        for (const q of [...parentQs, ...childQs]) {
+          await resilientWrite((row) => supabase.from('questions').upsert(row), {
+            id: q.id,
+            teacher_id: realUserId,
+            content: q.content,
+            course_id: (q.courseId && courseIdMap.get(q.courseId)) || q.courseId || null,
+            subject_id: (q.subjectId && subjectIdMap.get(q.subjectId)) || q.subjectId || null,
+            class_id: (q.classId && classIdMap.get(q.classId)) || q.classId || null,
+            question_type: q.questionType,
+            options: q.options || [],
+            difficulty: q.difficulty || 'medium',
+            chapter_id: q.chapterId || null,
+            topic_id: q.topicId || null,
+            category_id: q.categoryId || null,
+            cognitive_level: q.cognitiveLevel || DEFAULT_COGNITIVE_LEVEL,
+            marks: q.marks ?? 1,
+            parent_id: q.parentId || null,
+            sub_numbering_style: q.subNumberingStyle || null,
+            explanation: q.explanation,
+            image_url: q.imageUrl,
+          }, 'migrateGuestQuestion');
+        }
+
+        // Insert guest question papers & their paper_questions
+        for (const qp of guest.questionPapers) {
+          await supabase.from('qp_metadata').upsert({
+            id: qp.id,
+            teacher_id: realUserId,
+            title: qp.title,
+            date: qp.date,
+            max_marks: qp.maxMarks,
+            course_id: (qp.courseId && courseIdMap.get(qp.courseId)) || qp.courseId || null,
+            subject_id: (qp.subjectId && subjectIdMap.get(qp.subjectId)) || qp.subjectId || null,
+            class_id: (qp.classId && classIdMap.get(qp.classId)) || qp.classId || null,
+            instructions: qp.instructions || '',
+            is_published: qp.isPublished || false,
+            duration: qp.duration,
+            header_config: qp.headerConfig || {},
+          });
+        }
+
+        for (const [, pqs] of guest.paperQuestionsEntries) {
+          const parents = pqs.filter(pq => !pq.parentId);
+          const children = pqs.filter(pq => pq.parentId);
+          for (const pq of [...parents, ...children]) {
+            await resilientWrite((row) => supabase.from('paper_questions').upsert(row), {
+              id: pq.id,
+              paper_id: pq.paperId,
+              question_id: pq.questionId,
+              section: pq.section || '',
+              parent_id: pq.parentId || null,
+              marks: pq.marks || 0,
+              order_index: pq.orderIndex,
+              is_optional: pq.isOptional || false,
+              parent_shared_id: pq.parentSharedId || null,
+              origin_type: pq.originType || 'ORIGINAL',
+              sub_numbering_style: pq.subNumberingStyle || null,
+            }, 'migrateGuestPaperQuestion');
+          }
+        }
+
+        clearGuestWorkspace();
+      } catch (err) {
+        console.error('[syncGuestWorkspaceToAccount]', err);
+      } finally {
+        guestMigrationPromise = null;
+      }
+    })();
+
+    return guestMigrationPromise;
+  },
   setCurrentPaper: (id) => set({ currentPaperId: id }),
   setLoading: (loading) => set({ loading }),
   logout: () => {
+    if (isGuestUser(get().user)) clearGuestWorkspace();
     saveLocalUser(null);
     set({
       user: null,
@@ -311,7 +524,9 @@ export const useStore = create<AppState>()((set, get) => ({
     const { user } = get();
     if (!user) return;
     const nextVal = value !== undefined ? value : !user.keepQuestionsPrivate;
-    set({ user: { ...user, keepQuestionsPrivate: nextVal } });
+    const nextUser = { ...user, keepQuestionsPrivate: nextVal };
+    set({ user: nextUser });
+    if (isGuestUser(user)) { saveLocalUser(nextUser); return; }
     try {
       localStorage.setItem('questforma_privacy_pref', String(nextVal));
       await supabase.from('profiles').update({ keep_questions_private: nextVal }).eq('id', user.id);
@@ -330,6 +545,7 @@ export const useStore = create<AppState>()((set, get) => ({
       updatedAt: Date.now(),
     };
     set({ user: next });
+    if (isGuestUser(user)) { saveLocalUser(next); return true; }
     const row: Record<string, string> = {};
     if (fullName !== undefined) row.full_name = fullName;
     if (schoolName !== undefined) row.school_name = schoolName;
@@ -343,7 +559,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   fetchCourses: async () => {
     const { user } = get();
-    if (!user?.id) return;
+    if (!user?.id || isGuestUser(user)) return;
     
     const { data, error } = await supabase
       .from('courses')
@@ -370,7 +586,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   fetchSubjects: async () => {
     const { user } = get();
-    if (!user?.id) return;
+    if (!user?.id || isGuestUser(user)) return;
     
     const { data, error } = await supabase
       .from('subjects')
@@ -392,7 +608,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   fetchClasses: async () => {
     const { user } = get();
-    if (!user?.id) return;
+    if (!user?.id || isGuestUser(user)) return;
     
     const { data, error } = await supabase
       .from('classes')
@@ -414,7 +630,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   fetchQuestionPapers: async () => {
     const { user } = get();
-    if (!user?.id) return;
+    if (!user?.id || isGuestUser(user)) return;
     
     set({ loading: true });
     const { data, error } = await supabase
@@ -455,7 +671,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   fetchQuestions: async () => {
     const { user } = get();
-    if (!user?.id) return;
+    if (!user?.id || isGuestUser(user)) return;
 
     const { data, error } = await supabase
       .from('questions')
@@ -490,6 +706,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   fetchPaperQuestions: async (paperId: string) => {
+    if (isGuestUser(get().user)) return;
     const { data, error } = await supabase
       .from('paper_questions')
       .select('*')
@@ -522,6 +739,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   fetchSharedQuestions: async () => {
     const localStored = getStoredLocalSharedQuestions();
+    if (isGuestUser(get().user)) { set({ sharedQuestions: localStored }); return; }
     try {
       const { data, error } = await supabase
         .from('shared_questions')
@@ -583,7 +801,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   fetchNotifications: async () => {
     const { user } = get();
-    if (!user?.id) return;
+    if (!user?.id || isGuestUser(user)) return;
 
     try {
       const { data, error } = await supabase
@@ -620,6 +838,7 @@ export const useStore = create<AppState>()((set, get) => ({
       saveLocalNotifications(updated);
       return { notifications: updated };
     });
+    if (isGuestUser(get().user)) return;
     try {
       await supabase.from('notifications').update({ read: true }).eq('id', id);
     } catch {}
@@ -629,7 +848,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const { user } = get();
     set({ notifications: [] });
     saveLocalNotifications([]);
-    if (user?.id) {
+    if (user?.id && !isGuestUser(user)) {
       try {
         await supabase.from('notifications').delete().eq('recipient_id', user.id);
       } catch {}
@@ -648,6 +867,7 @@ export const useStore = create<AppState>()((set, get) => ({
       updatedAt: Date.now(),
     }] }));
 
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
     await supabase.from('courses').insert({ id, teacher_id: user.id, name });
     return id;
   },
@@ -656,11 +876,13 @@ export const useStore = create<AppState>()((set, get) => ({
     set((state) => ({
       courses: state.courses.map(c => c.id === id ? { ...c, name, updatedAt: Date.now() } : c),
     }));
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('courses').update({ name }).eq('id', id);
   },
 
   deleteCourse: async (id: string) => {
     set((state) => ({ courses: state.courses.filter(c => c.id !== id) }));
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('courses').delete().eq('id', id);
   },
 
@@ -676,6 +898,7 @@ export const useStore = create<AppState>()((set, get) => ({
       updatedAt: Date.now(),
     }] }));
 
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
     await supabase.from('subjects').insert({ id, teacher_id: user.id, name });
     return id;
   },
@@ -684,11 +907,13 @@ export const useStore = create<AppState>()((set, get) => ({
     set((state) => ({
       subjects: state.subjects.map(s => s.id === id ? { ...s, name, updatedAt: Date.now() } : s),
     }));
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('subjects').update({ name }).eq('id', id);
   },
 
   deleteSubject: async (id: string) => {
     set((state) => ({ subjects: state.subjects.filter(s => s.id !== id) }));
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('subjects').delete().eq('id', id);
   },
 
@@ -704,6 +929,7 @@ export const useStore = create<AppState>()((set, get) => ({
       updatedAt: Date.now(),
     }] }));
 
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
     await supabase.from('classes').insert({ id, teacher_id: user.id, name });
     return id;
   },
@@ -712,17 +938,19 @@ export const useStore = create<AppState>()((set, get) => ({
     set((state) => ({
       classes: state.classes.map(c => c.id === id ? { ...c, name, updatedAt: Date.now() } : c),
     }));
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('classes').update({ name }).eq('id', id);
   },
 
   deleteClass: async (id: string) => {
     set((state) => ({ classes: state.classes.filter(c => c.id !== id) }));
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('classes').delete().eq('id', id);
   },
 
   fetchLookups: async () => {
     const { user } = get();
-    if (!user?.id) return;
+    if (!user?.id || isGuestUser(user)) return;
     const local = getStoredLookups(user.id);
 
     const [chRes, tpRes, ctRes] = await Promise.all([
@@ -755,6 +983,7 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => ({ chapters: [...s.chapters, chapter].sort((a, b) => a.name.localeCompare(b.name)) }));
     const { chapters, topics, categories } = get();
     saveLookups(user.id, { chapters, topics, categories });
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
     const { error } = await supabase.from('chapters').insert({ id, teacher_id: user.id, name, subject_id: subjectId || null });
     if (error) console.warn('Chapter saved locally only:', error.message);
     return id;
@@ -767,6 +996,7 @@ export const useStore = create<AppState>()((set, get) => ({
       const { chapters, topics, categories } = get();
       saveLookups(user.id, { chapters, topics, categories });
     }
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('chapters').delete().eq('id', id);
   },
 
@@ -780,6 +1010,7 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => ({ topics: [...s.topics, topic].sort((a, b) => a.name.localeCompare(b.name)) }));
     const { chapters, topics, categories } = get();
     saveLookups(user.id, { chapters, topics, categories });
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
     const { error } = await supabase.from('topics').insert({ id, teacher_id: user.id, name, chapter_id: chapterId || null });
     if (error) console.warn('Topic saved locally only:', error.message);
     return id;
@@ -792,6 +1023,7 @@ export const useStore = create<AppState>()((set, get) => ({
       const { chapters, topics, categories } = get();
       saveLookups(user.id, { chapters, topics, categories });
     }
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('topics').delete().eq('id', id);
   },
 
@@ -805,6 +1037,7 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => ({ categories: [...s.categories, category].sort((a, b) => a.name.localeCompare(b.name)) }));
     const { chapters, topics, categories } = get();
     saveLookups(user.id, { chapters, topics, categories });
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
     const { error } = await supabase.from('categories').insert({ id, teacher_id: user.id, name });
     if (error) console.warn('Category saved locally only:', error.message);
     return id;
@@ -817,6 +1050,7 @@ export const useStore = create<AppState>()((set, get) => ({
       const { chapters, topics, categories } = get();
       saveLookups(user.id, { chapters, topics, categories });
     }
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('categories').delete().eq('id', id);
   },
 
@@ -843,6 +1077,7 @@ export const useStore = create<AppState>()((set, get) => ({
     };
 
     set((state) => ({ questionPapers: [newPaper, ...state.questionPapers], currentPaperId: id }));
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
 
     const { error } = await supabase.from('qp_metadata').insert({
       id,
@@ -872,6 +1107,7 @@ export const useStore = create<AppState>()((set, get) => ({
       ),
     }));
 
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     const supabaseUpdates: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -894,6 +1130,7 @@ export const useStore = create<AppState>()((set, get) => ({
       questionPapers: state.questionPapers.filter(qp => qp.id !== id),
       currentPaperId: state.currentPaperId === id ? null : state.currentPaperId,
     }));
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('qp_metadata').delete().eq('id', id);
   },
 
@@ -912,8 +1149,9 @@ export const useStore = create<AppState>()((set, get) => ({
     };
 
     // Make sure we have the paper's questions
-    let srcPqs = paperQuestions.get(id);
-    if (!srcPqs || srcPqs.length === 0) {
+    const fetchedPqs = paperQuestions.get(id);
+    let srcPqs: PaperQuestion[] = fetchedPqs || [];
+    if ((!fetchedPqs || fetchedPqs.length === 0) && !isGuestUser(user)) {
       const { data } = await supabase
         .from('paper_questions')
         .select('*')
@@ -962,6 +1200,8 @@ export const useStore = create<AppState>()((set, get) => ({
       questionPapers: [newPaper, ...state.questionPapers],
       paperQuestions: newPaperQuestionsMap,
     }));
+
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return newId; }
 
     // Insert into Supabase qp_metadata
     const { error: metaError } = await supabase.from('qp_metadata').insert({
@@ -1054,6 +1294,7 @@ export const useStore = create<AppState>()((set, get) => ({
     };
 
     set((state) => ({ questions: [newQuestion, ...state.questions] }));
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
 
     await resilientWrite((row) => supabase.from('questions').insert(row), {
       id,
@@ -1115,6 +1356,7 @@ export const useStore = create<AppState>()((set, get) => ({
       }
     }
 
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     const supabaseUpdates: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -1153,6 +1395,7 @@ export const useStore = create<AppState>()((set, get) => ({
       };
     });
 
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('questions').delete().eq('id', id);
   },
 
@@ -1191,6 +1434,7 @@ export const useStore = create<AppState>()((set, get) => ({
       return { paperQuestions: newPaperQuestions };
     });
 
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return id; }
     await supabase.from('paper_questions').insert({
       id,
       paper_id: paperId,
@@ -1222,6 +1466,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const supabaseUpdates: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     if (updates.section !== undefined) supabaseUpdates.section = updates.section;
     if (updates.parentId !== undefined) supabaseUpdates.parent_id = updates.parentId;
     if (updates.marks !== undefined) supabaseUpdates.marks = updates.marks;
@@ -1257,6 +1502,7 @@ export const useStore = create<AppState>()((set, get) => ({
       return { paperQuestions: newPaperQuestions };
     });
 
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('paper_questions')
       .delete()
       .eq('paper_id', paperId)
@@ -1275,6 +1521,7 @@ export const useStore = create<AppState>()((set, get) => ({
       order_index: i,
     }));
 
+    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
     await supabase.from('paper_questions').upsert(updates);
   },
 
@@ -1357,6 +1604,7 @@ export const useStore = create<AppState>()((set, get) => ({
       questions: [newQuestion, ...state.questions],
       paperQuestions: new Map(state.paperQuestions).set(paperId, [...paperQuestionsList, newPQ]),
     }));
+    if (isGuestUser(user)) { persistGuestSnapshot(get()); return pqId; }
 
     await resilientWrite((row) => supabase.from('questions').insert(row), {
       id: questionId,
@@ -1636,6 +1884,7 @@ export const useStore = create<AppState>()((set, get) => ({
       set({ notifications: [newNotif, ...get().notifications] });
     }
 
+    if (isGuestUser(user)) return;
     // Persist to Supabase if available
     try {
       await supabase.from('question_usage_logs').insert({

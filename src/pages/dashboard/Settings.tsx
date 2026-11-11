@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  UserRound, BookOpen, ShieldCheck, Plus, X, GraduationCap, Users, Bookmark, ListFilter, Tags, Loader2, Check, LogOut, Sun, Moon, Monitor,
+  UserRound, BookOpen, ShieldCheck, Plus, X, GraduationCap, Users, Bookmark, ListFilter, Tags, Loader2, Check, LogOut, LogIn, Sun, Moon, Monitor,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { supabase } from '../../supabase';
+import { isGuestUser } from '../../utils/guestWorkspace';
+import SignInModal from '../../components/SignInModal';
 import { PageHeader } from './components';
 import { initials } from './utils';
 import { useColorScheme, type ColorSchemePref } from './theme';
@@ -114,6 +116,8 @@ function ProfileTab() {
   const [fullName, setFullName] = useState(user?.fullName || '');
   const [schoolName, setSchoolName] = useState(user?.schoolName || '');
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [showSignIn, setShowSignIn] = useState(false);
+  const isGuest = isGuestUser(user);
 
   const dirty = fullName.trim() !== (user?.fullName || '') || schoolName.trim() !== (user?.schoolName || '');
 
@@ -170,13 +174,35 @@ function ProfileTab() {
 
       <AppearanceSection />
 
-      <section className="qf-card qf-row-card">
-        <div>
-          <h2 className="qf-card__title">Sign out</h2>
-          <p className="qf-card__subtitle">Sign out of QuestForma on this device.</p>
-        </div>
-        <button type="button" className="qf-btn qf-btn--secondary" onClick={() => supabase.auth.signOut()}><LogOut size={16} /> Sign out</button>
-      </section>
+      {isGuest ? (
+        <section className="qf-card qf-row-card">
+          <div>
+            <h2 className="qf-card__title">Sign in</h2>
+            <p className="qf-card__subtitle">Sign in or create a free account to sync your papers and export PDFs.</p>
+          </div>
+          <button type="button" className="qf-btn qf-btn--primary" onClick={() => setShowSignIn(true)}>
+            <LogIn size={16} /> Sign in
+          </button>
+        </section>
+      ) : (
+        <section className="qf-card qf-row-card">
+          <div>
+            <h2 className="qf-card__title">Sign out</h2>
+            <p className="qf-card__subtitle">Sign out of QuestForma on this device.</p>
+          </div>
+          <button type="button" className="qf-btn qf-btn--secondary" onClick={() => supabase.auth.signOut()}>
+            <LogOut size={16} /> Sign out
+          </button>
+        </section>
+      )}
+
+      <SignInModal
+        open={showSignIn}
+        onClose={() => setShowSignIn(false)}
+        title="Sign in to QuestForma"
+        subtitle="Sign in or create a free account to save your papers permanently and export print-ready PDFs."
+        ctaLabel="Sign In & Save Workspace"
+      />
     </div>
   );
 }

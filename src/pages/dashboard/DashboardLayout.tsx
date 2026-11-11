@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom';
 import {
-  LayoutDashboard, FileText, CalendarDays, Library, Bell, Settings, Plus, Search, LogOut,
+  LayoutDashboard, FileText, CalendarDays, Library, Bell, Settings, Plus, Search, LogIn,
   PanelLeftClose, PanelLeftOpen, ChevronsUpDown, UserRound, CheckCheck, Sun, Moon,
 } from 'lucide-react';
 import { useStore } from '../../store';
-import { supabase } from '../../supabase';
+import { isGuestUser } from '../../utils/guestWorkspace';
+import SignInModal from '../../components/SignInModal';
 import NewPaperDialog from './NewPaperDialog';
 import Menu, { useClickOutside } from './Menu';
 import { initials, relativeTime, cleanNotificationMessage } from './utils';
@@ -97,6 +98,8 @@ export default function DashboardLayout() {
     fetchQuestionPapers, fetchCourses, fetchSubjects, fetchClasses, fetchNotifications, fetchLookups, fetchQuestions, fetchSharedQuestions,
   } = useStore();
   const [showNewPaper, setShowNewPaper] = useState(false);
+  const [showSignInModal, setShowSignInModal] = useState(false);
+  const isGuest = isGuestUser(user);
   const [sidebarOpen, setSidebarOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 900 : true));
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -197,21 +200,28 @@ export default function DashboardLayout() {
             header={
               <div className="qf-menu__header">
                 <span className="qf-menu__header-name">{user?.fullName}</span>
-                <span className="qf-menu__header-email">{user?.email}</span>
+                <span className="qf-menu__header-email">{isGuest ? 'Preview mode · Sign in to export' : user?.email}</span>
               </div>
             }
-            items={[
-              { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/settings?tab=profile') },
-              { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/settings') },
-              'divider',
-              { label: 'Sign out', icon: <LogOut size={16} />, onSelect: () => supabase.auth.signOut(), danger: true },
-            ]}
+            items={
+              isGuest
+                ? [
+                    { label: 'Sign in', icon: <LogIn size={16} />, onSelect: () => setShowSignInModal(true) },
+                    'divider',
+                    { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/settings?tab=profile') },
+                    { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/settings') },
+                  ]
+                : [
+                    { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/settings?tab=profile') },
+                    { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/settings') },
+                  ]
+            }
             trigger={({ open, toggle }) => (
               <button type="button" className={`qf-user-chip ${open ? 'is-active' : ''}`} onClick={toggle} aria-expanded={open}>
                 <span className="qf-avatar">{initials(user?.fullName)}</span>
                 <span className="qf-user-chip__info">
                   <span className="qf-user-chip__name">{user?.fullName || 'Teacher'}</span>
-                  <span className="qf-user-chip__sub">{user?.schoolName || user?.email}</span>
+                  <span className="qf-user-chip__sub">{isGuest ? 'Preview mode' : (user?.schoolName || user?.email)}</span>
                 </span>
                 <ChevronsUpDown size={16} className="qf-user-chip__chev" />
               </button>
@@ -249,6 +259,16 @@ export default function DashboardLayout() {
             <kbd className="qf-kbd">/</kbd>
           </form>
           <div className="qf-topbar__actions">
+            {isGuest && (
+              <button
+                type="button"
+                className="qf-btn qf-btn--secondary qf-btn--sm"
+                onClick={() => setShowSignInModal(true)}
+                title="Sign in or create an account"
+              >
+                <LogIn size={14} /> Sign in
+              </button>
+            )}
             <button
               type="button"
               className="qf-icon-btn qf-icon-btn--bordered qf-theme-toggle"
@@ -274,6 +294,13 @@ export default function DashboardLayout() {
       </div>
 
       <NewPaperDialog open={showNewPaper} onClose={() => setShowNewPaper(false)} />
+      <SignInModal
+        open={showSignInModal}
+        onClose={() => setShowSignInModal(false)}
+        title="Sign in to save your workspace"
+        subtitle="Sign in or create a free account to keep your papers and export print-ready PDFs anytime."
+        ctaLabel="Sign In & Save Workspace"
+      />
     </div>
   );
 }

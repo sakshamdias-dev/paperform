@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import type { Session } from '@supabase/supabase-js';
 import { useStore } from './store';
 import { supabase } from './supabase';
-import Login from './pages/Login';
+import { isGuestUser } from './utils/guestWorkspace';
 import DashboardLayout from './pages/dashboard/DashboardLayout';
 import Overview from './pages/dashboard/Overview';
 import Papers from './pages/dashboard/Papers';
@@ -11,28 +12,26 @@ import QuestionBank from './pages/dashboard/QuestionBank';
 import Notifications from './pages/dashboard/Notifications';
 import SettingsPage from './pages/dashboard/Settings';
 import Editor from './pages/Editor';
+import Landing from './pages/landing/Landing';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const user = useStore((s) => s.user);
-  const location = useLocation();
 
   if (!user?.id) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/home" replace />;
   }
   return children;
 }
 
-function LoginRoute() {
+function HomeRoute() {
   const user = useStore((s) => s.user);
-  const location = useLocation();
-  const from = (location.state as any)?.from?.pathname || '/';
 
-  if (user?.id) {
-    return <Navigate to={from} replace />;
+  if (user?.id && !isGuestUser(user)) {
+    return <Navigate to="/" replace />;
   }
-  return <Login />;
+  return <Landing />;
 }
 
 function App() {
@@ -48,7 +47,7 @@ function App() {
     let fetchInFlight = false;
 
     // Function to handle user session and profile
-    const handleSession = async (session: any) => {
+    const handleSession = async (session: Session | null) => {
       if (session?.user) {
         if (loadedUserId === session.user.id || fetchInFlight) {
           if (mounted) setLoading(false);
@@ -56,6 +55,9 @@ function App() {
         }
         fetchInFlight = true;
         try {
+          // Migrate any guest-mode paper/questions before fetching account papers
+          await useStore.getState().syncGuestWorkspaceToAccount(session.user.id);
+
           const { data: profileData } = await supabase
             .from('profiles')
             .select('full_name, school_name, keep_questions_private, created_at, updated_at')
@@ -91,8 +93,10 @@ function App() {
           fetchInFlight = false;
         }
       } else {
-        loadedUserId = null;
-        if (mounted) logout();
+        if (!isGuestUser(useStore.getState().user)) {
+          loadedUserId = null;
+          if (mounted) logout();
+        }
       }
       
       if (mounted) setLoading(false);
@@ -104,8 +108,11 @@ function App() {
         if (session) {
           void handleSession(session);
         } else {
-          loadedUserId = null;
-          logout();
+          // Preserve guest preview session if the user clicked "Create paper"
+          if (!isGuestUser(useStore.getState().user)) {
+            loadedUserId = null;
+            logout();
+          }
           setLoading(false);
         }
       }
@@ -169,7 +176,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<LoginRoute />} />
+        <Route path="/home" element={<HomeRoute />} />
         <Route
           path="/"
           element={

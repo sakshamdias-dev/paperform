@@ -136,6 +136,8 @@ import {
   Eye,
 } from 'lucide-react';
 import { useStore } from '../store';
+import { isGuestUser } from '../utils/guestWorkspace';
+import SignInModal from '../components/SignInModal';
 import type {
   Question,
   PaperQuestion,
@@ -612,6 +614,7 @@ export default function Editor() {
   const paper = questionPapers.find(qp => qp.id === id);
   const [selectedPQId, setSelectedPQId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [showExportSignIn, setShowExportSignIn] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [suggestedSearch, setSuggestedSearch] = useState('');
@@ -2014,7 +2017,11 @@ export default function Editor() {
     showToastMessage('Question deleted from bank');
   };
 
-  const exportPDF = async () => {
+  const exportPDF = async (bypassGuestGate = false) => {
+    if (!bypassGuestGate && isGuestUser(user)) {
+      setShowExportSignIn(true);
+      return;
+    }
     if (isExporting) return;
     setIsExporting(true);
     showToastMessage('Generating PDF...');
@@ -2518,7 +2525,7 @@ export default function Editor() {
           </button>
           <button
             className="toolbar-btn-priority-export"
-            onClick={exportPDF}
+            onClick={() => void exportPDF(false)}
             disabled={isExporting}
             title="Export as print-ready PDF"
           >
@@ -4568,6 +4575,14 @@ export default function Editor() {
           {toastMessage}
         </div>
       )}
+
+      <SignInModal
+        open={showExportSignIn}
+        onClose={() => setShowExportSignIn(false)}
+        onSuccess={() => {
+          void exportPDF(true);
+        }}
+      />
 
     </div>
   );
