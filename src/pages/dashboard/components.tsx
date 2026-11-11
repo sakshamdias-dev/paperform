@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Copy, MoreHorizontal, PencilLine, Trash2, CalendarDays, Clock, Award } from 'lucide-react';
 import type { QuestionPaper } from '../../types';
 import { useStore } from '../../store';
@@ -47,12 +48,13 @@ export function useLookupNames() {
 /** Delete confirmation + action menu shared by every list that shows papers. */
 // eslint-disable-next-line react-refresh/only-export-components
 export function usePaperActions() {
+  const navigate = useNavigate();
   const { deleteQuestionPaper, duplicateQuestionPaper, questionPapers } = useStore();
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const target = questionPapers.find((p) => p.id === pendingDelete);
 
   const items = (paper: QuestionPaper): MenuItem[] => [
-    { label: 'Open in editor', icon: <PencilLine size={16} />, onSelect: () => window.open(`/editor/${paper.id}`, '_blank') },
+    { label: 'Open in editor', icon: <PencilLine size={16} />, onSelect: () => navigate(`/editor/${paper.id}`) },
     { label: 'Duplicate', icon: <Copy size={16} />, onSelect: () => void duplicateQuestionPaper(paper.id) },
     { label: 'Delete', icon: <Trash2 size={16} />, onSelect: () => setPendingDelete(paper.id), danger: true },
   ];
@@ -118,13 +120,14 @@ export function PaperThumb({ paper, subjectName }: { paper: QuestionPaper; subje
 }
 
 export function PaperCard({ paper, menuItems }: { paper: QuestionPaper; menuItems: MenuItem[] }) {
+  const navigate = useNavigate();
   const names = useLookupNames();
   const subject = names.subject(paper.subjectId);
   const klass = names.klass(paper.classId);
   const color = subjectColor(paper.subjectId || subject);
 
   return (
-    <article className="qf-paper-card" onClick={() => window.open(`/editor/${paper.id}`, '_blank')}>
+    <article className="qf-paper-card" onClick={() => navigate(`/editor/${paper.id}`)}>
       <PaperThumb paper={paper} subjectName={subject} />
       <div className="qf-paper-card__body">
         <div className="qf-paper-card__top">
@@ -132,7 +135,7 @@ export function PaperCard({ paper, menuItems }: { paper: QuestionPaper; menuItem
           <PaperActionsMenu items={menuItems} />
         </div>
         <h3 className="qf-paper-card__title" title={paper.title}>
-          <a href={`/editor/${paper.id}`} target="_blank" rel="noopener noreferrer" onClick={(e) => { e.preventDefault(); window.open(`/editor/${paper.id}`, '_blank'); }}>{paper.title}</a>
+          <Link to={`/editor/${paper.id}`} onClick={(e) => e.stopPropagation()}>{paper.title}</Link>
         </h3>
         <div className="qf-paper-card__tags">
           {subject && <span className="qf-chip" style={{ color: color.fg, background: color.bg }}>{subject}</span>}

@@ -187,7 +187,7 @@ export default function Overview() {
               const klass = names.klass(p.classId);
               const color = subjectColor(p.subjectId || subject);
               return (
-                <article key={p.id} className="qf-wb-row" onClick={() => window.open(`/editor/${p.id}`, '_blank')}>
+                <article key={p.id} className="qf-wb-row" onClick={() => navigate(`/editor/${p.id}`)}>
                   <div className="qf-wb-row__sheet" style={{ borderTopColor: color.fg }}>
                     <span style={{ background: color.fg }} />
                     <i />
@@ -266,13 +266,13 @@ export default function Overview() {
               {upcoming.slice(0, 2).map((p) => {
                 const d = new Date(p.date!);
                 return (
-                  <li key={p.id} className="qf-list__row qf-list__row--compact" onClick={() => window.open(`/editor/${p.id}`, '_blank')}>
+                  <li key={p.id} className="qf-list__row qf-list__row--compact" onClick={() => navigate(`/editor/${p.id}`)}>
                     <span className="qf-datebox qf-datebox--sm">
                       <span className="qf-datebox__m">{d.toLocaleDateString('en-US', { month: 'short' })}</span>
                       <span className="qf-datebox__d">{d.getDate()}</span>
                     </span>
                     <span className="qf-list__main">
-                      <Link to={`/editor/${p.id}`} target="_blank" rel="noopener noreferrer" className="qf-list__title" onClick={(e) => e.stopPropagation()}>{p.title}</Link>
+                      <Link to={`/editor/${p.id}`} className="qf-list__title" onClick={(e) => e.stopPropagation()}>{p.title}</Link>
                       <span className="qf-list__meta">
                         {[names.subject(p.subjectId), names.klass(p.classId)].filter(Boolean).join(' · ') || formatDate(p.date)}
                       </span>

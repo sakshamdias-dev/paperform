@@ -342,9 +342,6 @@ function persistWorkspaceSnapshot(state: AppState) {
   }, 120);
 }
 
-// Keep alias so existing calls in store.ts continue to work seamlessly
-const persistGuestSnapshot = persistWorkspaceSnapshot;
-
 const initialStoredUser = getStoredLocalUser();
 const initialWorkspaceData = isGuestUser(initialStoredUser)
   ? loadGuestWorkspace()
@@ -618,7 +615,16 @@ export const useStore = create<AppState>()((set, get) => ({
   setCurrentPaper: (id) => set({ currentPaperId: id }),
   setLoading: (loading) => set({ loading }),
   logout: () => {
-    if (isGuestUser(get().user)) clearGuestWorkspace();
+    const prevUser = get().user;
+    if (isGuestUser(prevUser)) {
+      clearGuestWorkspace();
+    } else if (prevUser?.id) {
+      try {
+        localStorage.removeItem(`${USER_WORKSPACE_CACHE_PREFIX}${prevUser.id}`);
+      } catch {}
+    }
+    inFlightFetches.clear();
+    lastFetchTimestamps.clear();
     saveLocalUser(null);
     set({
       user: null,
@@ -1012,7 +1018,8 @@ export const useStore = create<AppState>()((set, get) => ({
       updatedAt: Date.now(),
     }].sort((a, b) => a.name.localeCompare(b.name)) }));
 
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return id;
     await supabase.from('courses').insert({ id, teacher_id: user.id, name });
     return id;
   },
@@ -1021,13 +1028,15 @@ export const useStore = create<AppState>()((set, get) => ({
     set((state) => ({
       courses: state.courses.map(c => c.id === id ? { ...c, name, updatedAt: Date.now() } : c),
     }));
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('courses').update({ name }).eq('id', id);
   },
 
   deleteCourse: async (id: string) => {
     set((state) => ({ courses: state.courses.filter(c => c.id !== id) }));
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('courses').delete().eq('id', id);
   },
 
@@ -1045,7 +1054,8 @@ export const useStore = create<AppState>()((set, get) => ({
       updatedAt: Date.now(),
     }].sort((a, b) => a.name.localeCompare(b.name)) }));
 
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return id;
     await supabase.from('subjects').insert({ id, teacher_id: user.id, name });
     return id;
   },
@@ -1054,13 +1064,15 @@ export const useStore = create<AppState>()((set, get) => ({
     set((state) => ({
       subjects: state.subjects.map(s => s.id === id ? { ...s, name, updatedAt: Date.now() } : s),
     }));
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('subjects').update({ name }).eq('id', id);
   },
 
   deleteSubject: async (id: string) => {
     set((state) => ({ subjects: state.subjects.filter(s => s.id !== id) }));
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('subjects').delete().eq('id', id);
   },
 
@@ -1078,7 +1090,8 @@ export const useStore = create<AppState>()((set, get) => ({
       updatedAt: Date.now(),
     }].sort((a, b) => a.name.localeCompare(b.name)) }));
 
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return id;
     await supabase.from('classes').insert({ id, teacher_id: user.id, name });
     return id;
   },
@@ -1087,39 +1100,44 @@ export const useStore = create<AppState>()((set, get) => ({
     set((state) => ({
       classes: state.classes.map(c => c.id === id ? { ...c, name, updatedAt: Date.now() } : c),
     }));
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('classes').update({ name }).eq('id', id);
   },
 
   deleteClass: async (id: string) => {
     set((state) => ({ classes: state.classes.filter(c => c.id !== id) }));
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('classes').delete().eq('id', id);
   },
 
   fetchLookups: async () => {
     const { user } = get();
     if (!user?.id || isGuestUser(user)) return;
-    const local = getStoredLookups(user.id);
+    return dedupeFetch(`lookups:${user.id}`, 10000, async () => {
+      const local = getStoredLookups(user.id);
 
-    const [chRes, tpRes, ctRes] = await Promise.all([
-      supabase.from('chapters').select('*').eq('teacher_id', user.id).order('name'),
-      supabase.from('topics').select('*').eq('teacher_id', user.id).order('name'),
-      supabase.from('categories').select('*').eq('teacher_id', user.id).order('name'),
-    ]);
+      const [chRes, tpRes, ctRes] = await Promise.all([
+        supabase.from('chapters').select('*').eq('teacher_id', user.id).order('name'),
+        supabase.from('topics').select('*').eq('teacher_id', user.id).order('name'),
+        supabase.from('categories').select('*').eq('teacher_id', user.id).order('name'),
+      ]);
 
-    const chapters: Chapter[] = !chRes.error && chRes.data
-      ? chRes.data.map(r => ({ id: r.id, teacherId: r.teacher_id, name: r.name, subjectId: r.subject_id || undefined, createdAt: new Date(r.created_at).getTime() }))
-      : local.chapters;
-    const topics: Topic[] = !tpRes.error && tpRes.data
-      ? tpRes.data.map(r => ({ id: r.id, teacherId: r.teacher_id, name: r.name, chapterId: r.chapter_id || undefined, createdAt: new Date(r.created_at).getTime() }))
-      : local.topics;
-    const categories: Category[] = !ctRes.error && ctRes.data
-      ? ctRes.data.map(r => ({ id: r.id, teacherId: r.teacher_id, name: r.name, createdAt: new Date(r.created_at).getTime() }))
-      : local.categories;
+      const chapters: Chapter[] = !chRes.error && chRes.data
+        ? chRes.data.map(r => ({ id: r.id, teacherId: r.teacher_id, name: r.name, subjectId: r.subject_id || undefined, createdAt: new Date(r.created_at).getTime() }))
+        : local.chapters;
+      const topics: Topic[] = !tpRes.error && tpRes.data
+        ? tpRes.data.map(r => ({ id: r.id, teacherId: r.teacher_id, name: r.name, chapterId: r.chapter_id || undefined, createdAt: new Date(r.created_at).getTime() }))
+        : local.topics;
+      const categories: Category[] = !ctRes.error && ctRes.data
+        ? ctRes.data.map(r => ({ id: r.id, teacherId: r.teacher_id, name: r.name, createdAt: new Date(r.created_at).getTime() }))
+        : local.categories;
 
-    set({ chapters, topics, categories });
-    saveLookups(user.id, { chapters, topics, categories });
+      set({ chapters, topics, categories });
+      saveLookups(user.id, { chapters, topics, categories });
+      persistWorkspaceSnapshot(get());
+    });
   },
 
   createChapter: async (name: string, subjectId?: string) => {
@@ -1132,7 +1150,8 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => ({ chapters: [...s.chapters, chapter].sort((a, b) => a.name.localeCompare(b.name)) }));
     const { chapters, topics, categories } = get();
     saveLookups(user.id, { chapters, topics, categories });
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return id;
     const { error } = await supabase.from('chapters').insert({ id, teacher_id: user.id, name, subject_id: subjectId || null });
     if (error) console.warn('Chapter saved locally only:', error.message);
     return id;
@@ -1145,7 +1164,7 @@ export const useStore = create<AppState>()((set, get) => ({
       const { chapters, topics, categories } = get();
       saveLookups(user.id, { chapters, topics, categories });
     }
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return; }
+    if (isGuestUser(user)) { persistWorkspaceSnapshot(get()); return; }
     await supabase.from('chapters').delete().eq('id', id);
   },
 
@@ -1159,7 +1178,8 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => ({ topics: [...s.topics, topic].sort((a, b) => a.name.localeCompare(b.name)) }));
     const { chapters, topics, categories } = get();
     saveLookups(user.id, { chapters, topics, categories });
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return id;
     const { error } = await supabase.from('topics').insert({ id, teacher_id: user.id, name, chapter_id: chapterId || null });
     if (error) console.warn('Topic saved locally only:', error.message);
     return id;
@@ -1172,7 +1192,7 @@ export const useStore = create<AppState>()((set, get) => ({
       const { chapters, topics, categories } = get();
       saveLookups(user.id, { chapters, topics, categories });
     }
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return; }
+    if (isGuestUser(user)) { persistWorkspaceSnapshot(get()); return; }
     await supabase.from('topics').delete().eq('id', id);
   },
 
@@ -1186,7 +1206,8 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => ({ categories: [...s.categories, category].sort((a, b) => a.name.localeCompare(b.name)) }));
     const { chapters, topics, categories } = get();
     saveLookups(user.id, { chapters, topics, categories });
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return id;
     const { error } = await supabase.from('categories').insert({ id, teacher_id: user.id, name });
     if (error) console.warn('Category saved locally only:', error.message);
     return id;
@@ -1199,7 +1220,7 @@ export const useStore = create<AppState>()((set, get) => ({
       const { chapters, topics, categories } = get();
       saveLookups(user.id, { chapters, topics, categories });
     }
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return; }
+    if (isGuestUser(user)) { persistWorkspaceSnapshot(get()); return; }
     await supabase.from('categories').delete().eq('id', id);
   },
 
@@ -1226,7 +1247,8 @@ export const useStore = create<AppState>()((set, get) => ({
     };
 
     set((state) => ({ questionPapers: [newPaper, ...state.questionPapers], currentPaperId: id }));
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return id;
 
     const { error } = await supabase.from('qp_metadata').insert({
       id,
@@ -1256,7 +1278,8 @@ export const useStore = create<AppState>()((set, get) => ({
       ),
     }));
 
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     const supabaseUpdates: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -1279,7 +1302,8 @@ export const useStore = create<AppState>()((set, get) => ({
       questionPapers: state.questionPapers.filter(qp => qp.id !== id),
       currentPaperId: state.currentPaperId === id ? null : state.currentPaperId,
     }));
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('qp_metadata').delete().eq('id', id);
   },
 
@@ -1350,7 +1374,8 @@ export const useStore = create<AppState>()((set, get) => ({
       paperQuestions: newPaperQuestionsMap,
     }));
 
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return newId; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return newId;
 
     // Insert into Supabase qp_metadata
     const { error: metaError } = await supabase.from('qp_metadata').insert({
@@ -1443,7 +1468,8 @@ export const useStore = create<AppState>()((set, get) => ({
     };
 
     set((state) => ({ questions: [newQuestion, ...state.questions] }));
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return id;
 
     await resilientWrite((row) => supabase.from('questions').insert(row), {
       id,
@@ -1505,7 +1531,8 @@ export const useStore = create<AppState>()((set, get) => ({
       }
     }
 
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     const supabaseUpdates: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -1544,7 +1571,8 @@ export const useStore = create<AppState>()((set, get) => ({
       };
     });
 
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('questions').delete().eq('id', id);
   },
 
@@ -1583,7 +1611,7 @@ export const useStore = create<AppState>()((set, get) => ({
       return { paperQuestions: newPaperQuestions };
     });
 
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return id; }
+    if (isGuestUser(get().user)) { persistWorkspaceSnapshot(get()); return id; }
     await supabase.from('paper_questions').insert({
       id,
       paper_id: paperId,
@@ -1615,7 +1643,8 @@ export const useStore = create<AppState>()((set, get) => ({
     const supabaseUpdates: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     if (updates.section !== undefined) supabaseUpdates.section = updates.section;
     if (updates.parentId !== undefined) supabaseUpdates.parent_id = updates.parentId;
     if (updates.marks !== undefined) supabaseUpdates.marks = updates.marks;
@@ -1651,7 +1680,8 @@ export const useStore = create<AppState>()((set, get) => ({
       return { paperQuestions: newPaperQuestions };
     });
 
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('paper_questions')
       .delete()
       .eq('paper_id', paperId)
@@ -1670,7 +1700,8 @@ export const useStore = create<AppState>()((set, get) => ({
       order_index: i,
     }));
 
-    if (isGuestUser(get().user)) { persistGuestSnapshot(get()); return; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(get().user)) return;
     await supabase.from('paper_questions').upsert(updates);
   },
 
@@ -1753,7 +1784,8 @@ export const useStore = create<AppState>()((set, get) => ({
       questions: [newQuestion, ...state.questions],
       paperQuestions: new Map(state.paperQuestions).set(paperId, [...paperQuestionsList, newPQ]),
     }));
-    if (isGuestUser(user)) { persistGuestSnapshot(get()); return pqId; }
+    persistWorkspaceSnapshot(get());
+    if (isGuestUser(user)) return pqId;
 
     await resilientWrite((row) => supabase.from('questions').insert(row), {
       id: questionId,

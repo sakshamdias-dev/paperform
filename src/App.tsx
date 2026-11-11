@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import type { Session } from '@supabase/supabase-js';
 import { useStore } from './store';
@@ -8,13 +8,34 @@ import DashboardLayout from './pages/dashboard/DashboardLayout';
 import Overview from './pages/dashboard/Overview';
 import Papers from './pages/dashboard/Papers';
 import Schedule from './pages/dashboard/Schedule';
-import QuestionBank from './pages/dashboard/QuestionBank';
 import Notifications from './pages/dashboard/Notifications';
 import SettingsPage from './pages/dashboard/Settings';
-import Editor from './pages/Editor';
-import Landing from './pages/landing/Landing';
-
 import { ErrorBoundary } from './components/ErrorBoundary';
+
+const QuestionBank = lazy(() => import('./pages/dashboard/QuestionBank'));
+const Editor = lazy(() => import('./pages/Editor'));
+const Landing = lazy(() => import('./pages/landing/Landing'));
+
+function RouteLoader() {
+  return (
+    <div style={{
+      minHeight: '45vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <div style={{
+        width: 32,
+        height: 32,
+        border: '3px solid rgba(3, 64, 137, 0.14)',
+        borderTopColor: '#ff5b0f',
+        borderRadius: '50%',
+        animation: 'spin 0.7s linear infinite',
+      }} />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const user = useStore((s) => s.user);
@@ -178,35 +199,37 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/home" element={<HomeRoute />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Overview />} />
-          <Route path="papers" element={<Papers />} />
-          <Route path="schedule" element={<Schedule />} />
-          <Route path="question-bank" element={<QuestionBank />} />
-          <Route path="notifications" element={<Notifications />} />
-          <Route path="settings" element={<SettingsPage />} />
-        </Route>
-        <Route
-          path="/editor/:id"
-          element={
-            <ProtectedRoute>
-              <ErrorBoundary>
-                <Editor />
-              </ErrorBoundary>
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense fallback={<RouteLoader />}>
+        <Routes>
+          <Route path="/home" element={<HomeRoute />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Overview />} />
+            <Route path="papers" element={<Papers />} />
+            <Route path="schedule" element={<Schedule />} />
+            <Route path="question-bank" element={<QuestionBank />} />
+            <Route path="notifications" element={<Notifications />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+          <Route
+            path="/editor/:id"
+            element={
+              <ProtectedRoute>
+                <ErrorBoundary>
+                  <Editor />
+                </ErrorBoundary>
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

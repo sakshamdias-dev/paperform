@@ -19,12 +19,12 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { MathfieldElement } from 'mathlive';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import FullQuill from '../components/FullQuill';
+import MathLiveDialog from '../components/MathLiveDialog';
 
 
 async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<string> {
@@ -64,9 +64,6 @@ async function getCroppedImg(image: HTMLImageElement, crop: PixelCrop): Promise<
 }
 
 
-MathfieldElement.fontsDirectory = '/fonts';
-MathfieldElement.soundsDirectory = '/sounds';
-
 const BaseQuillImage = ReactQuill.Quill.import('formats/image') as any;
 const QUILL_IMAGE_ATTRIBUTES = ['alt', 'height', 'width', 'style', 'data-x', 'data-y', 'data-align'];
 class CustomQuillImage extends BaseQuillImage {
@@ -92,21 +89,6 @@ class CustomQuillImage extends BaseQuillImage {
 }
 ReactQuill.Quill.register(CustomQuillImage, true);
 
-declare module 'react' {
-  namespace JSX {
-    interface IntrinsicElements {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      'math-field': any;
-    }
-  }
-}
-
-declare global {
-  interface Window {
-    MathJax: any;
-  }
-}
-
 import { Rnd } from 'react-rnd';
 import {
   Plus,
@@ -116,11 +98,7 @@ import {
   GripVertical,
   ArrowLeft,
   Check,
-  ListChecks,
-  AlignLeft,
-  Search,
   Pencil,
-  Keyboard,
   Settings,
   X,
   ChevronUp,
@@ -128,9 +106,7 @@ import {
   ChevronRight,
   GitFork,
   Layers,
-  FolderPlus,
   Loader2,
-  FileText,
   BookOpen,
   Printer,
   Eye,
@@ -164,12 +140,6 @@ const HEADER_FIELD_CONFIG: { key: keyof VisibleHeaderFields; label: string }[] =
   { key: 'date', label: 'Date' },
   { key: 'duration', label: 'Duration' },
   { key: 'totalMarks', label: 'Total Marks' },
-];
-
-const BLOCK_TYPES: { type: QuestionType; label: string; icon: typeof AlignLeft; description: string; header: string }[] = [
-  { type: 'mcq', label: 'Multiple Choice', icon: ListChecks, description: 'Question with options A-D', header: 'Multiple Choice:' },
-  { type: 'subjective', label: 'Subjective Question', icon: AlignLeft, description: 'Answer the following', header: 'Answer the following:' },
-  { type: 'text', label: 'Text / Reading Passage', icon: FileText, description: 'Passage, scenario, or instructions in between questions', header: 'Read the following:' },
 ];
 
 function formatSubQuestionNumber(index: number, depth: number, style?: SubQuestionNumberingStyle): string {
@@ -208,9 +178,15 @@ function formatSubQuestionNumber(index: number, depth: number, style?: SubQuesti
 
 
 function stripHtml(html: string): string {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.textContent || tmp.innerText || '';
+  if (!html) return '';
+  return html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
 }
 
 function LazyNumberInput({ value, onChange, placeholder, className, min, fallback = 0 }: { value: number; onChange: (val: number) => void; placeholder?: string; className?: string; min?: number; fallback?: number }) {
@@ -407,7 +383,7 @@ function getMcqLayout(options: string[]): string {
   return 'grid'; // 2x2 grid is the default
 }
 
-function SortableQuestion({
+const SortableQuestion = React.memo(function SortableQuestion({
   paperQuestion,
   question,
   isSelected,
@@ -679,7 +655,7 @@ function SortableQuestion({
       </div>
     </div>
   );
-}
+});
 
 export default function Editor() {
   const { id } = useParams<{ id: string }>();
@@ -715,7 +691,6 @@ export default function Editor() {
     createAndAddQuestion,
     updateQuestion,
     updatePaperQuestion,
-    deleteQuestion,
     importSharedQuestionToPaper,
   } = useStore();
 
@@ -727,7 +702,6 @@ export default function Editor() {
   const [showExportSignIn, setShowExportSignIn] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [suggestedSearch, setSuggestedSearch] = useState('');
   const [saving, setSaving] = useState(false);
 
   const [draftType, setDraftType] = useState<QuestionType | null>(null);
@@ -775,8 +749,7 @@ export default function Editor() {
   const [draftSubquestions, setDraftSubquestions] = useState<DraftSubquestion[]>([]);
 
   const [isConstructorOpen, setIsConstructorOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'tree' | 'add-section' | 'add-question'>('tree');
-  const [newSectionTitle, setNewSectionTitle] = useState('');
+  const [activeView, setActiveView] = useState<'tree' | 'add-question'>('tree');
   const [qParentId, setQParentId] = useState<string>('');
   const [isAddingNewSection, setIsAddingNewSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
@@ -787,14 +760,10 @@ export default function Editor() {
   const [viewingQuestion, setViewingQuestion] = useState<ViewModalQuestion | null>(null);
   const [editingSection, setEditingSection] = useState<{ oldName: string; name: string; description: string } | null>(null);
 
-
-
   const [showMathDialog, setShowMathDialog] = useState(false);
-  const [showCreatorHub, setShowCreatorHub] = useState(false);
+  const [initialMathLatex, setInitialMathLatex] = useState('');
   const [showPaperSettings, setShowPaperSettings] = useState(false);
-  const [mathKeyboardVisible, setMathKeyboardVisible] = useState(false);
   const mathDialogCallbackRef = useRef<((latex: string) => void) | null>(null);
-  const mathFieldRef = useRef<any>(null);
 
   // Close drawers on Escape key
   useEffect(() => {
@@ -1209,7 +1178,7 @@ export default function Editor() {
   const handlePaperImageMouseDown = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.tagName !== 'IMG') return;
-    if (target.closest('.paper-header') || target.closest('.measurement-container')) return;
+    if (target.closest('.paper-header')) return;
 
     const imgElement = target as HTMLImageElement;
     if (imgElement.style.outline) {
@@ -1307,26 +1276,10 @@ export default function Editor() {
     }
   }, [questions, paper, updateQuestion, updateQuestionPaper]);
 
-  // Track MathLive virtual keyboard visibility
-  useEffect(() => {
-    const kbd = window.mathVirtualKeyboard;
-    if (!kbd) return;
-    const handler = () => {
-      setMathKeyboardVisible(kbd.visible);
-    };
-    kbd.addEventListener('geometrychange', handler);
-    return () => kbd.removeEventListener('geometrychange', handler);
-  }, []);
-
   const openMathDialog = useCallback((onInsert: (latex: string) => void, initialLatex: string = '') => {
     mathDialogCallbackRef.current = onInsert;
+    setInitialMathLatex(initialLatex || '');
     setShowMathDialog(true);
-    setTimeout(() => {
-      if (mathFieldRef.current) {
-        mathFieldRef.current.value = initialLatex || '';
-        mathFieldRef.current.focus();
-      }
-    }, 100);
   }, []);
 
   const sensors = useSensors(
@@ -1335,11 +1288,11 @@ export default function Editor() {
   );
 
   const paperRef = useRef<HTMLDivElement>(null);
-  const measureRef = useRef<HTMLDivElement>(null);
   const [loadingPaper, setLoadingPaper] = useState(() => !questionPapers.some(qp => qp.id === id));
 
   useEffect(() => {
     let active = true;
+    let deferredTimer: ReturnType<typeof setTimeout> | null = null;
     if (id) {
       if (!useStore.getState().questionPapers.some(qp => qp.id === id)) {
         setLoadingPaper(true);
@@ -1349,15 +1302,23 @@ export default function Editor() {
       } else {
         setLoadingPaper(false);
       }
-      fetchPaperQuestions(id);
-      fetchQuestions();
-      fetchSharedQuestions();
-      fetchCourses();
-      fetchSubjects();
-      fetchClasses();
-      fetchLookups();
+      // Fetch paper questions (and joined question content) immediately for fast render
+      void fetchPaperQuestions(id);
+      // Defer background bank/lookup revalidation so paper rendering isn't contended
+      deferredTimer = setTimeout(() => {
+        if (!active) return;
+        void fetchQuestions();
+        void fetchSharedQuestions();
+        void fetchCourses();
+        void fetchSubjects();
+        void fetchClasses();
+        void fetchLookups();
+      }, 0);
     }
-    return () => { active = false; };
+    return () => {
+      active = false;
+      if (deferredTimer) clearTimeout(deferredTimer);
+    };
   }, [id, user?.id, fetchQuestionPapers, fetchPaperQuestions, fetchQuestions, fetchSharedQuestions, fetchCourses, fetchSubjects, fetchClasses, fetchLookups]);
 
   // Refresh academic setup lists whenever Paper Settings drawer is opened
@@ -1374,13 +1335,33 @@ export default function Editor() {
     return paperQuestions.get(id || '') || [];
   }, [paperQuestions, id]);
 
+  const questionsById = useMemo(() => {
+    const map = new Map<string, Question>();
+    for (const q of questions) {
+      map.set(q.id, q);
+    }
+    return map;
+  }, [questions]);
+
+  const childrenByParentId = useMemo(() => {
+    const map = new Map<string, PaperQuestion[]>();
+    for (const pq of paperQuestionsList) {
+      if (pq.parentId) {
+        const list = map.get(pq.parentId);
+        if (list) list.push(pq);
+        else map.set(pq.parentId, [pq]);
+      }
+    }
+    return map;
+  }, [paperQuestionsList]);
+
   // Tree building logic
   const sections = useMemo(() => {
     const secMap = new Map<string, any>();
     const pqMap = new Map<string, any>();
 
     paperQuestionsList.forEach(pq => {
-      const q = questions.find(x => x.id === pq.questionId);
+      const q = questionsById.get(pq.questionId);
       pqMap.set(pq.id, { ...pq, text: q?.content, type: q?.questionType, options: q?.options, children: [] });
     });
 
@@ -1399,7 +1380,7 @@ export default function Editor() {
     });
 
     return Array.from(secMap.values());
-  }, [paperQuestionsList, questions]);
+  }, [paperQuestionsList, questionsById]);
 
 
   const getAllQuestionsFlat = (qs: any[], excludeId?: string | null, depth = 0): any[] => {
@@ -1428,11 +1409,22 @@ export default function Editor() {
     setExpandedNodes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-
-  // Render MathJax formulas in the paper preview and property panel
+  // Render MathJax formulas only when paper content or math-containing views change
   useEffect(() => {
-    void renderMath();
-  });
+    const timer = setTimeout(() => {
+      void renderMath();
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [
+    paperQuestionsList,
+    questions,
+    paper?.instructions,
+    paper?.headerConfig?.sectionDescriptions,
+    isConstructorOpen,
+    activeView,
+    isQuestionBankOpen,
+    viewingQuestion,
+  ]);
 
 
 
@@ -1640,21 +1632,6 @@ export default function Editor() {
 
   const handleRemoveOption = (index: number) => {
     setDraftOptions(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleSelectBlockType = (type: QuestionType) => {
-    setDraftType(type);
-    setDraftContent('');
-    setDraftOptions(['', '', '', '']);
-    setDraftSection(prev => prev || (selectedPQId ? (paperQuestionsList.find(pq => pq.id === selectedPQId)?.section || '') : ''));
-    setDraftMarks(selectedPQId ? (paperQuestionsList.find(pq => pq.id === selectedPQId)?.marks || 1) : 1);
-    setDraftDifficulty('medium');
-    setDraftTypeHeader('');
-    setSelectedPQId(null);
-    setDraftSubquestions([]);
-    setDraftCourseId(paper?.courseId || '');
-    setDraftSubjectId(paper?.subjectId || '');
-    setShowCreatorHub(false);
   };
 
   const handleAddDraftSubquestion = () => {
@@ -2070,84 +2047,15 @@ export default function Editor() {
   };
 
 
-  const getQuestion = (questionId: string) => questions.find(q => q.id === questionId);
   const getCourse = (id?: string) => courses.find(c => c.id === id);
   const getSubject = (id?: string) => subjects.find(s => s.id === id);
   const getClass = (id?: string) => classes.find(c => c.id === id);
-
-
 
   const totalMarks = useMemo(() => {
     return paperQuestionsList
       .filter(pq => !pq.parentId && !pq.isOptional)
       .reduce((sum, pq) => sum + (pq.marks || 0), 0);
   }, [paperQuestionsList]);
-
-  const suggestedQuestions = useMemo(() => {
-    // Deduplicate questions by content so the bank doesn't show identical clones
-    const uniqueQuestions = [];
-    const seenContent = new Set();
-
-    for (const q of questions) {
-      const normalized = stripHtml(q.content).replace(/\s+/g, '').toLowerCase();
-      if (!seenContent.has(normalized)) {
-        seenContent.add(normalized);
-        uniqueQuestions.push(q);
-      }
-    }
-
-    const searchTerms = suggestedSearch.toLowerCase().trim().split(/\s+/).filter(Boolean);
-
-    return uniqueQuestions
-      .filter(q => {
-        if (searchTerms.length === 0) return true;
-        const plainText = stripHtml(q.content).toLowerCase();
-        // Question matches if it contains ALL search terms
-        return searchTerms.every(term => plainText.includes(term));
-      })
-      .slice(0, 30);
-  }, [questions, suggestedSearch]);
-
-  const handleAddSuggested = async (questionId: string) => {
-    if (!id) return;
-
-    if (paper?.maxMarks && (totalMarks + 1 > paper.maxMarks)) {
-      window.alert(`Error: Total marks (${totalMarks + 1}) cannot exceed the maximum marks provided in the paper settings (${paper.maxMarks}).`);
-      return;
-    }
-
-    const q = questions.find(q => q.id === questionId);
-    if (!q) return;
-    setSaving(true);
-    try {
-      // Create a fresh clone so we bypass the unique (paper_id, question_id) database constraint,
-      // allowing the user to add the same question multiple times to the same paper.
-      await createAndAddQuestion(
-        id,
-        q.content,
-        q.questionType,
-        q.options,
-        draftSection || '',
-        undefined,
-        1,
-        undefined,
-        q.subjectId,
-        q.classId,
-        q.difficulty,
-        q.explanation,
-        q.imageUrl,
-        q.typeHeader || undefined,
-      );
-      showToastMessage('Question added from bank!');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeleteBankQuestion = async (questionId: string) => {
-    await deleteQuestion(questionId);
-    showToastMessage('Question deleted from bank');
-  };
 
   const exportPDF = async (bypassGuestGate = false) => {
     if (!bypassGuestGate && isGuestUser(user)) {
@@ -2447,24 +2355,30 @@ export default function Editor() {
       </div>
     );
   }
-  // Build sub-question tree for a given parent PQ id
+  // Build sub-question tree for a given parent PQ id in O(children) using childrenByParentId
   const buildSubTree = (parentId: string): SubQuestionNode[] => {
-    return paperQuestionsList
-      .filter(pq => pq.parentId === parentId)
-      .map(pq => {
-        const q = getQuestion(pq.questionId);
-        return q ? { pq, question: q, children: buildSubTree(pq.id) } : null;
-      })
-      .filter(Boolean) as SubQuestionNode[];
+    const children = childrenByParentId.get(parentId);
+    if (!children || children.length === 0) return [];
+    const nodes: SubQuestionNode[] = [];
+    for (const pq of children) {
+      const q = questionsById.get(pq.questionId);
+      if (q) {
+        nodes.push({ pq, question: q, children: buildSubTree(pq.id) });
+      }
+    }
+    return nodes;
   };
 
   const renderQuestionRange = (startIdx: number, endIdx: number) => {
     // Only render top-level questions (those without a parentId)
     const topLevel = paperQuestionsList.slice(startIdx, endIdx).filter(pq => !pq.parentId);
     const renderedSectionsInCurrentRange = new Set<string>();
+    const isContinuous = Boolean(paper?.headerConfig?.continuousNumbering);
+    let continuousCounter = 0;
+    const sectionCounters = new Map<string, number>();
 
     return topLevel.map((pq, idx) => {
-      const q = getQuestion(pq.questionId);
+      const q = questionsById.get(pq.questionId);
       if (!q) return null;
 
       let showSectionHeader: string | undefined;
@@ -2475,21 +2389,17 @@ export default function Editor() {
         showSectionHeader = pq.section;
       }
 
-      // Question number calculation: skip counting questions of type 'text' (passages/scenarios)
+      // Question number calculation in O(1): skip counting questions of type 'text' (passages/scenarios)
       let questionNumber = 1;
-      if (paper?.headerConfig?.continuousNumbering) {
-        questionNumber = topLevel
-          .slice(0, idx + 1)
-          .filter(p => {
-            const currQ = getQuestion(p.questionId);
-            return currQ && currQ.questionType !== 'text';
-          }).length;
-      } else {
-        const currentSectionTopLevels = topLevel.slice(0, idx + 1).filter(p => p.section === pq.section);
-        questionNumber = currentSectionTopLevels.filter(p => {
-          const currQ = getQuestion(p.questionId);
-          return currQ && currQ.questionType !== 'text';
-        }).length;
+      if (q.questionType !== 'text') {
+        if (isContinuous) {
+          continuousCounter += 1;
+          questionNumber = continuousCounter;
+        } else {
+          const nextSecCount = (sectionCounters.get(pq.section) || 0) + 1;
+          sectionCounters.set(pq.section, nextSecCount);
+          questionNumber = nextSecCount;
+        }
       }
 
       const secIdx = showSectionHeader ? distinctSections.indexOf(showSectionHeader) : -1;
@@ -2926,47 +2836,6 @@ export default function Editor() {
             fontFamily: paper.headerConfig?.fontFamily ? paper.headerConfig.fontFamily : undefined,
           }}
         >
-          {/* Hidden measurement container */}
-          <div
-            ref={measureRef}
-            className="measurement-container"
-            style={{
-              position: 'absolute', left: -9999, top: 0,
-              width: '794px', padding: '20px 40px',
-              background: 'white', zIndex: -1, opacity: 0, pointerEvents: 'none',
-            }}
-          >
-            {paperQuestionsList.map((pq) => {
-              const q = getQuestion(pq.questionId);
-              if (!q) return null;
-              const mcqLayout = q.questionType === 'mcq' ? getMcqLayout(q.options || []) : 'vertical';
-              return (
-                <div key={pq.id} data-pq-id={pq.id} className="clean-question" style={{ padding: '8px 0' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                    <span className="q-number">1.</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="q-text" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(q.content) }} />
-                      {q.questionType === 'mcq' && q.options && q.options.length > 0 && (
-                        <div className={`q-options q-options-${mcqLayout}`}>
-                          {q.options.map((opt, i) => (
-                            <span key={i} className="q-option">{String.fromCharCode(65 + i)}. {opt}</span>
-                          ))}
-                        </div>
-                      )}
-                      {q.questionType === 'truefalse' && (
-                        <div className="q-options q-options-horizontal">
-                          <span className="q-option">(a) True</span>
-                          <span className="q-option">(b) False</span>
-                        </div>
-                      )}
-                    </div>
-                    <span className="marks-inline" style={{ flexShrink: 0, marginLeft: 24 }}>{pq.marks}m</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
           {sections.length === 0 ? (
             <div className="paper-page last-page">
               {renderPaperHeader()}
@@ -3178,84 +3047,6 @@ export default function Editor() {
           </div>
         )}
       </div>
-
-      {/* CREATOR HUB MODAL */}
-      {showCreatorHub && (
-        <div className="modal-overlay">
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 className="modal-title">Add Question</h2>
-              <button className="modal-close-btn" onClick={() => setShowCreatorHub(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="modal-content">
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-                Choose a question type to create, or add from your question bank.
-              </p>
-              <div className="creator-hub-cards">
-                {BLOCK_TYPES.map(({ type, label, icon: Icon, description }) => (
-                  <button
-                    key={type}
-                    className="creator-hub-card"
-                    onClick={() => handleSelectBlockType(type)}
-                  >
-                    <div className="creator-hub-card-icon"><Icon size={20} /></div>
-                    <div className="creator-hub-card-info">
-                      <span className="creator-hub-card-label">{label}</span>
-                      <span className="creator-hub-card-desc">{description}</span>
-                    </div>
-                    <span className="creator-hub-card-arrow">→</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Question Bank Section */}
-              <div className="creator-hub-bank">
-                <h4 className="creator-hub-bank-title">
-                  <Search size={14} /> Question Bank
-                </h4>
-                <div style={{ marginBottom: 12 }}>
-                  <input
-                    type="text"
-                    placeholder="Search your bank..."
-                    value={suggestedSearch}
-                    onChange={(e) => setSuggestedSearch(e.target.value)}
-                    className="creator-hub-search"
-                  />
-                </div>
-                <div className="creator-hub-bank-list">
-                  {suggestedQuestions.length === 0 ? (
-                    <div className="creator-hub-bank-empty">No questions found</div>
-                  ) : (
-                    suggestedQuestions.map(q => (
-                      <div key={q.id} className="creator-hub-bank-item">
-                        <div className="creator-hub-bank-item-info">
-                          <span className="creator-hub-bank-item-type">
-                            {BLOCK_TYPES.find(b => b.type === q.questionType)?.label || q.questionType}
-                          </span>
-                          <span className="creator-hub-bank-item-text">
-                            {stripHtml(q.content)}
-                          </span>
-                        </div>
-                        <div className="creator-hub-bank-item-actions" onClick={(e) => e.stopPropagation()}>
-                          <button onClick={() => { handleAddSuggested(q.id); setShowCreatorHub(false); }} title="Add to paper">
-                            <Plus size={14} />
-                          </button>
-                          <button onClick={() => handleDeleteBankQuestion(q.id)} title="Delete from bank" className="danger">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
 
       {/* TEST PAPER CONSTRUCTOR MODAL */}
       {isConstructorOpen && (
@@ -3478,36 +3269,6 @@ export default function Editor() {
                       </div>
                     );
                   })}
-                </div>
-              )}
-
-              {activeView === 'add-section' && (
-                <div style={{ maxWidth: 500, margin: '0 auto', padding: '20px', border: '1px solid var(--border-color)', borderRadius: 8 }}>
-                  <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-                    <FolderPlus size={18} /> Add New Section
-                  </h3>
-                  <div className="property-field">
-                    <label className="property-label">Section Title</label>
-                    <input
-                      type="text"
-                      className="property-input"
-                      placeholder="e.g., Section A: Objective Type"
-                      value={newSectionTitle}
-                      onChange={(e) => setNewSectionTitle(e.target.value)}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
-                    <button className="btn btn-secondary" onClick={() => setActiveView('tree')}>Cancel</button>
-                    <button className="btn btn-primary" onClick={() => {
-                      if (!newSectionTitle.trim()) return;
-                      // Just set draftSection to new title, it will be added when a question is added
-                      setDraftSection(newSectionTitle);
-                      setNewSectionTitle('');
-                      setQParentId('');
-                      setDraftType('subjective');
-                      setActiveView('add-question');
-                    }}>Continue to Add Questions</button>
-                  </div>
                 </div>
               )}
 
@@ -4572,90 +4333,14 @@ export default function Editor() {
       )}
 
       {/* MathLive Equation Dialog (Rendered last with highest z-index so it always appears above the Question Modal) */}
-      {showMathDialog && (
-        <div
-          className="modal-overlay math-dialog-overlay"
-          style={{
-            zIndex: 10000,
-            ...(mathKeyboardVisible ? { alignItems: 'flex-start', paddingTop: '8vh' } : {})
-          }}
-        >
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 700, zIndex: 10001 }}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 className="modal-title">Insert Math Formula</h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  className="btn btn-secondary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (window.mathVirtualKeyboard) {
-                      if (window.mathVirtualKeyboard.visible) {
-                        window.mathVirtualKeyboard.hide();
-                      } else {
-                        window.mathVirtualKeyboard.show();
-                      }
-                    }
-                  }}
-                  title="Toggle Virtual Keyboard"
-                >
-                  <Keyboard size={14} /> {mathKeyboardVisible ? 'Hide Keyboard' : 'Keyboard'}
-                </button>
-                <button
-                  className="modal-close-btn"
-                  onClick={() => {
-                    if (window.mathVirtualKeyboard) window.mathVirtualKeyboard.hide();
-                    setShowMathDialog(false);
-                  }}
-                  title="Close"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-            <div className="modal-content">
-              <div className="property-field">
-                <label className="property-label">Visual Editor (MathLive)</label>
-                <math-field
-                  ref={mathFieldRef}
-                  math-virtual-keyboard-policy="manual"
-                  style={{
-                    fontSize: '24px',
-                    padding: '12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-md)',
-                    width: '100%',
-                    backgroundColor: 'white',
-                    color: 'black',
-                    minHeight: '80px'
-                  }}
-                />
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>
-                  Click inside the field to type or use the virtual keyboard. You can also paste LaTeX.
-                </p>
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => {
-                if (window.mathVirtualKeyboard) window.mathVirtualKeyboard.hide();
-                setShowMathDialog(false);
-              }}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => {
-                console.log('Insert Formula button clicked', {
-                  callback: !!mathDialogCallbackRef.current,
-                  mathFieldRef: !!mathFieldRef.current,
-                  value: mathFieldRef.current?.value
-                });
-                if (mathDialogCallbackRef.current && mathFieldRef.current) {
-                  mathDialogCallbackRef.current(mathFieldRef.current.value);
-                }
-                if (window.mathVirtualKeyboard) window.mathVirtualKeyboard.hide();
-                setShowMathDialog(false);
-              }}>Insert Formula</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <MathLiveDialog
+        open={showMathDialog}
+        initialLatex={initialMathLatex}
+        onClose={() => setShowMathDialog(false)}
+        onInsert={(latex) => {
+          mathDialogCallbackRef.current?.(latex);
+        }}
+      />
 
       {/* QUESTION VIEW PREVIEW MODAL */}
       {viewingQuestion && (

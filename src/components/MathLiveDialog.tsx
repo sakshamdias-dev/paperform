@@ -5,9 +5,10 @@ import { MathfieldElement } from 'mathlive';
 MathfieldElement.fontsDirectory = '/fonts';
 MathfieldElement.soundsDirectory = '/sounds';
 
-declare global {
+declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       'math-field': any;
     }
   }

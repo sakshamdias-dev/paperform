@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { CalendarDays, Clock, Award, Plus, ChevronRight, CalendarX } from 'lucide-react';
 import type { QuestionPaper } from '../../types';
 import { useStore } from '../../store';
@@ -18,17 +18,18 @@ function groupByMonth(papers: QuestionPaper[]) {
 }
 
 function ScheduleRow({ paper, items, past }: { paper: QuestionPaper; items: MenuItem[]; past?: boolean }) {
+  const navigate = useNavigate();
   const names = useLookupNames();
   const d = new Date(paper.date!);
   const days = daysUntil(paper.date) ?? 0;
   return (
-    <li className={`qf-schedule-row ${past ? 'is-past' : ''} ${days >= 0 && days <= 3 ? 'is-soon' : ''}`} onClick={() => window.open(`/editor/${paper.id}`, '_blank')}>
+    <li className={`qf-schedule-row ${past ? 'is-past' : ''} ${days >= 0 && days <= 3 ? 'is-soon' : ''}`} onClick={() => navigate(`/editor/${paper.id}`)}>
       <span className="qf-datebox qf-datebox--lg">
         <span className="qf-datebox__m">{d.toLocaleDateString('en-US', { weekday: 'short' })}</span>
         <span className="qf-datebox__d">{d.getDate()}</span>
       </span>
       <span className="qf-list__main">
-        <Link to={`/editor/${paper.id}`} target="_blank" rel="noopener noreferrer" className="qf-list__title" onClick={(e) => e.stopPropagation()}>{paper.title}</Link>
+        <Link to={`/editor/${paper.id}`} className="qf-list__title" onClick={(e) => e.stopPropagation()}>{paper.title}</Link>
         <span className="qf-schedule-row__meta">
           <span>{[names.subject(paper.subjectId), names.klass(paper.classId)].filter(Boolean).join(' · ') || 'No subject'}</span>
           <span><Clock size={13} /> {formatDuration(paper.duration)}</span>
@@ -42,6 +43,7 @@ function ScheduleRow({ paper, items, past }: { paper: QuestionPaper; items: Menu
 }
 
 export default function Schedule() {
+  const navigate = useNavigate();
   const { openNewPaper } = useDashboard();
   const { questionPapers } = useStore();
   const { items, dialog } = usePaperActions();
@@ -104,10 +106,10 @@ export default function Schedule() {
               </div>
               <ul className="qf-list">
                 {unscheduled.map((p) => (
-                  <li key={p.id} className="qf-list__row" onClick={() => window.open(`/editor/${p.id}`, '_blank')}>
+                  <li key={p.id} className="qf-list__row" onClick={() => navigate(`/editor/${p.id}`)}>
                     <span className="qf-file-icon qf-file-icon--muted"><CalendarX size={16} /></span>
                     <span className="qf-list__main">
-                      <Link to={`/editor/${p.id}`} target="_blank" rel="noopener noreferrer" className="qf-list__title" onClick={(e) => e.stopPropagation()}>{p.title}</Link>
+                      <Link to={`/editor/${p.id}`} className="qf-list__title" onClick={(e) => e.stopPropagation()}>{p.title}</Link>
                       <span className="qf-list__meta">{[names.subject(p.subjectId), names.klass(p.classId)].filter(Boolean).join(' · ') || 'No subject'} · Edited {relativeTime(p.updatedAt)}</span>
                     </span>
                     <ChevronRight size={16} className="qf-muted" />
