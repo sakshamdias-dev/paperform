@@ -246,6 +246,110 @@ function LazyNumberInput({ value, onChange, placeholder, className, min, fallbac
   );
 }
 
+/**
+ * Reusable dropdown for Paper Settings academic setup fields (Course, Subject,
+ * Class, Category, Chapter, Topic) with inline creation synced to the store.
+ */
+function AcademicSelectField({
+  label,
+  emptyLabel,
+  value,
+  options,
+  onChange,
+  onCreate,
+  placeholder,
+}: {
+  label: string;
+  emptyLabel: string;
+  value: string;
+  options: { id: string; name: string }[];
+  onChange: (id: string) => void;
+  onCreate?: (name: string) => Promise<string>;
+  placeholder?: string;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const commitAdd = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || !onCreate || saving) return;
+    setSaving(true);
+    try {
+      const createdId = await onCreate(trimmed);
+      if (createdId) onChange(createdId);
+      setAdding(false);
+      setName('');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="property-field" style={{ flex: 1, minWidth: 0 }}>
+      <label className="property-label">{label}</label>
+      {adding ? (
+        <div style={{ display: 'flex', gap: 4 }}>
+          <input
+            type="text"
+            className="property-input"
+            style={{ fontSize: 12, padding: '6px 8px', minWidth: 0 }}
+            autoFocus
+            placeholder={placeholder || `New ${label.toLowerCase()}...`}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void commitAdd();
+              } else if (e.key === 'Escape') {
+                e.stopPropagation();
+                setAdding(false);
+                setName('');
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ padding: '4px 8px', fontSize: 11, flexShrink: 0 }}
+            disabled={saving || !name.trim()}
+            onClick={() => void commitAdd()}
+          >
+            {saving ? '...' : 'Save'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ padding: '4px 6px', fontSize: 11, flexShrink: 0 }}
+            onClick={() => { setAdding(false); setName(''); }}
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <select
+          className="property-input"
+          value={value}
+          onChange={(e) => {
+            if (e.target.value === '__ADD_NEW__') {
+              setAdding(true);
+            } else {
+              onChange(e.target.value);
+            }
+          }}
+        >
+          <option value="">{emptyLabel}</option>
+          {options.map((opt) => (
+            <option key={opt.id} value={opt.id}>{opt.name}</option>
+          ))}
+          {onCreate && <option value="__ADD_NEW__">+ Add New {label}...</option>}
+        </select>
+      )}
+    </div>
+  );
+}
+
 interface SubQuestionNode {
   pq: PaperQuestion;
   question: Question;
@@ -595,7 +699,13 @@ export default function Editor() {
     fetchPaperQuestions,
     fetchQuestions,
     fetchSharedQuestions,
+    fetchCourses,
+    fetchSubjects,
+    fetchClasses,
     fetchLookups,
+    createCourse,
+    createSubject,
+    createClass,
     createChapter,
     createTopic,
     createCategory,
@@ -698,13 +808,22 @@ export default function Editor() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isQuestionBankOpen, showPaperSettings]);
 
-  // Auto-sync draft course and subject from paper details
+  // Auto-sync draft classification defaults from paper details
   useEffect(() => {
     if (paper) {
       if (!draftCourseId && paper.courseId) setDraftCourseId(paper.courseId);
       if (!draftSubjectId && paper.subjectId) setDraftSubjectId(paper.subjectId);
+      if (!draftCategoryId && paper.headerConfig?.categoryId) setDraftCategoryId(paper.headerConfig.categoryId);
+      if (!draftChapterId && paper.headerConfig?.chapterId) setDraftChapterId(paper.headerConfig.chapterId);
+      if (!draftTopicId && paper.headerConfig?.topicId) setDraftTopicId(paper.headerConfig.topicId);
     }
-  }, [paper?.courseId, paper?.subjectId]);
+  }, [
+    paper?.courseId,
+    paper?.subjectId,
+    paper?.headerConfig?.categoryId,
+    paper?.headerConfig?.chapterId,
+    paper?.headerConfig?.topicId,
+  ]);
 
   const [editingImage, setEditingImage] = useState<{
     imgElement: HTMLImageElement;
@@ -1233,10 +1352,23 @@ export default function Editor() {
       fetchPaperQuestions(id);
       fetchQuestions();
       fetchSharedQuestions();
+      fetchCourses();
+      fetchSubjects();
+      fetchClasses();
       fetchLookups();
     }
     return () => { active = false; };
-  }, [id, fetchQuestionPapers, fetchPaperQuestions, fetchQuestions, fetchSharedQuestions, fetchLookups]);
+  }, [id, user?.id, fetchQuestionPapers, fetchPaperQuestions, fetchQuestions, fetchSharedQuestions, fetchCourses, fetchSubjects, fetchClasses, fetchLookups]);
+
+  // Refresh academic setup lists whenever Paper Settings drawer is opened
+  useEffect(() => {
+    if (showPaperSettings && user?.id) {
+      fetchCourses();
+      fetchSubjects();
+      fetchClasses();
+      fetchLookups();
+    }
+  }, [showPaperSettings, user?.id, fetchCourses, fetchSubjects, fetchClasses, fetchLookups]);
 
   const paperQuestionsList = useMemo(() => {
     return paperQuestions.get(id || '') || [];
@@ -4315,43 +4447,62 @@ export default function Editor() {
               )}
             </div>
 
-            <div className="drawer-section-divider">Exam Details</div>
+            <div className="drawer-section-divider">Exam Details &amp; Academic Setup</div>
             <div style={{ display: 'flex', gap: 12 }}>
-              <div className="property-field" style={{ flex: 1 }}>
-                <label className="property-label">Course</label>
-                <select
-                  className="property-input"
-                  value={paper.courseId || ''}
-                  onChange={(e) => updateQuestionPaper(paper.id, { courseId: e.target.value || undefined })}
-                >
-                  <option value="">No Course</option>
-                  {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div className="property-field" style={{ flex: 1 }}>
-                <label className="property-label">Subject</label>
-                <select
-                  className="property-input"
-                  value={paper.subjectId || ''}
-                  onChange={(e) => updateQuestionPaper(paper.id, { subjectId: e.target.value || undefined })}
-                >
-                  <option value="">No Subject</option>
-                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
+              <AcademicSelectField
+                label="Course"
+                emptyLabel="No Course"
+                value={paper.courseId || ''}
+                options={courses}
+                onChange={(val) => updateQuestionPaper(paper.id, { courseId: val || undefined })}
+                onCreate={createCourse}
+              />
+              <AcademicSelectField
+                label="Subject"
+                emptyLabel="No Subject"
+                value={paper.subjectId || ''}
+                options={subjects}
+                onChange={(val) => updateQuestionPaper(paper.id, { subjectId: val || undefined })}
+                onCreate={createSubject}
+              />
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
-              <div className="property-field" style={{ flex: 1 }}>
-                <label className="property-label">Class</label>
-                <select
-                  className="property-input"
-                  value={paper.classId || ''}
-                  onChange={(e) => updateQuestionPaper(paper.id, { classId: e.target.value || undefined })}
-                >
-                  <option value="">No Class</option>
-                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
+              <AcademicSelectField
+                label="Class"
+                emptyLabel="No Class"
+                value={paper.classId || ''}
+                options={classes}
+                onChange={(val) => updateQuestionPaper(paper.id, { classId: val || undefined })}
+                onCreate={createClass}
+              />
+              <AcademicSelectField
+                label="Category / Stream"
+                emptyLabel="No Category"
+                value={paper.headerConfig?.categoryId || ''}
+                options={categories}
+                onChange={(val) => handleUpdateHeaderConfig({ categoryId: val || undefined })}
+                onCreate={createCategory}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <AcademicSelectField
+                label="Chapter"
+                emptyLabel="No Chapter"
+                value={paper.headerConfig?.chapterId || ''}
+                options={chapters}
+                onChange={(val) => handleUpdateHeaderConfig({ chapterId: val || undefined })}
+                onCreate={(name) => createChapter(name, paper.subjectId)}
+              />
+              <AcademicSelectField
+                label="Topic"
+                emptyLabel="No Topic"
+                value={paper.headerConfig?.topicId || ''}
+                options={topics}
+                onChange={(val) => handleUpdateHeaderConfig({ topicId: val || undefined })}
+                onCreate={(name) => createTopic(name, paper.headerConfig?.chapterId)}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
               <div className="property-field" style={{ flex: 1 }}>
                 <label className="property-label">Date</label>
                 <input
@@ -4361,8 +4512,6 @@ export default function Editor() {
                   onChange={(e) => updateQuestionPaper(paper.id, { date: e.target.value })}
                 />
               </div>
-            </div>
-            <div style={{ display: 'flex', gap: 12 }}>
               <div className="property-field" style={{ flex: 1 }}>
                 <label className="property-label">Duration (min)</label>
                 <LazyNumberInput
@@ -4372,6 +4521,8 @@ export default function Editor() {
                   fallback={0}
                 />
               </div>
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
               <div className="property-field" style={{ flex: 1 }}>
                 <label className="property-label">Max Marks</label>
                 <LazyNumberInput
@@ -4381,6 +4532,7 @@ export default function Editor() {
                   fallback={0}
                 />
               </div>
+              <div style={{ flex: 1 }} />
             </div>
 
             <div className="drawer-section-divider">Instructions</div>

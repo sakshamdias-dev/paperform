@@ -82,6 +82,9 @@ function App() {
             // Background pre-fetch without blocking the UI
             void Promise.allSettled([
               fetchQuestionPapers(),
+              useStore.getState().fetchCourses(),
+              useStore.getState().fetchSubjects(),
+              useStore.getState().fetchClasses(),
               useStore.getState().fetchSharedQuestions(),
               useStore.getState().fetchNotifications(),
               useStore.getState().fetchLookups(),

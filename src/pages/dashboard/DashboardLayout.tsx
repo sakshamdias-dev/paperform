@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, CalendarDays, Library, Bell, Settings, Plus, Search, LogIn,
-  PanelLeftClose, PanelLeftOpen, ChevronsUpDown, UserRound, CheckCheck, Sun, Moon,
+  PanelLeftClose, PanelLeftOpen, ChevronsUpDown, UserRound, CheckCheck, Sun, Moon, ArrowLeft,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { isGuestUser } from '../../utils/guestWorkspace';
@@ -206,15 +206,15 @@ export default function DashboardLayout() {
             items={
               isGuest
                 ? [
-                    { label: 'Sign in', icon: <LogIn size={16} />, onSelect: () => setShowSignInModal(true) },
-                    'divider',
-                    { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/settings?tab=profile') },
-                    { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/settings') },
-                  ]
+                  { label: 'Sign in', icon: <LogIn size={16} />, onSelect: () => setShowSignInModal(true) },
+                  'divider',
+                  { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/settings?tab=profile') },
+                  { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/settings') },
+                ]
                 : [
-                    { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/settings?tab=profile') },
-                    { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/settings') },
-                  ]
+                  { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/settings?tab=profile') },
+                  { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/settings') },
+                ]
             }
             trigger={({ open, toggle }) => (
               <button type="button" className={`qf-user-chip ${open ? 'is-active' : ''}`} onClick={toggle} aria-expanded={open}>
@@ -294,6 +294,17 @@ export default function DashboardLayout() {
       </div>
 
       <NewPaperDialog open={showNewPaper} onClose={() => setShowNewPaper(false)} />
+      {isGuest && (
+        <button
+          type="button"
+          className="qf-floating-lp-btn"
+          onClick={() => navigate('/home')}
+          title="Back to Home"
+        >
+          <ArrowLeft size={15} />
+          <span>Back to Home</span>
+        </button>
+      )}
       <SignInModal
         open={showSignInModal}
         onClose={() => setShowSignInModal(false)}

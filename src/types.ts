@@ -166,6 +166,9 @@ export interface HeaderConfig {
   subQuestionNumberingStyle?: SubQuestionNumberingStyle;
   sectionDescriptions?: Record<string, string>; // section name -> rich text html description
   spacing?: PaperSpacing;
+  categoryId?: string;
+  chapterId?: string;
+  topicId?: string;
 }
 
 /** User-controllable vertical spacing for the printed paper (all values in px except lineHeight). */

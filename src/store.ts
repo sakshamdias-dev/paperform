@@ -276,12 +276,47 @@ interface AppState {
 
 const generateId = () => crypto.randomUUID();
 
-const initialStoredUser = getStoredLocalUser();
-const initialGuestData = isGuestUser(initialStoredUser) ? loadGuestWorkspace() : null;
+const USER_WORKSPACE_CACHE_PREFIX = 'questforma_workspace_cache_v1_';
 
-function persistGuestSnapshot(state: AppState) {
-  if (!isGuestUser(state.user)) return;
-  saveGuestWorkspace({
+interface CachedWorkspaceSnapshot {
+  courses: Course[];
+  subjects: Subject[];
+  classes: Class[];
+  chapters: Chapter[];
+  topics: Topic[];
+  categories: Category[];
+  questionPapers: QuestionPaper[];
+  questions: Question[];
+  paperQuestionsEntries: [string, PaperQuestion[]][];
+}
+
+function loadUserWorkspaceCache(userId?: string | null): CachedWorkspaceSnapshot | null {
+  if (!userId) return null;
+  try {
+    const raw = localStorage.getItem(`${USER_WORKSPACE_CACHE_PREFIX}${userId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CachedWorkspaceSnapshot>;
+    return {
+      courses: Array.isArray(parsed.courses) ? parsed.courses : [],
+      subjects: Array.isArray(parsed.subjects) ? parsed.subjects : [],
+      classes: Array.isArray(parsed.classes) ? parsed.classes : [],
+      chapters: Array.isArray(parsed.chapters) ? parsed.chapters : [],
+      topics: Array.isArray(parsed.topics) ? parsed.topics : [],
+      categories: Array.isArray(parsed.categories) ? parsed.categories : [],
+      questionPapers: Array.isArray(parsed.questionPapers) ? parsed.questionPapers : [],
+      questions: Array.isArray(parsed.questions) ? parsed.questions : [],
+      paperQuestionsEntries: Array.isArray(parsed.paperQuestionsEntries) ? parsed.paperQuestionsEntries : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+let cacheWriteTimer: ReturnType<typeof setTimeout> | null = null;
+
+function persistWorkspaceSnapshot(state: AppState) {
+  if (!state.user?.id) return;
+  const snapshot: CachedWorkspaceSnapshot = {
     courses: state.courses,
     subjects: state.subjects,
     classes: state.classes,
@@ -291,29 +326,111 @@ function persistGuestSnapshot(state: AppState) {
     questionPapers: state.questionPapers,
     questions: state.questions,
     paperQuestionsEntries: Array.from(state.paperQuestions.entries()),
-  });
+  };
+  if (isGuestUser(state.user)) {
+    saveGuestWorkspace(snapshot);
+    return;
+  }
+  const userId = state.user.id;
+  if (cacheWriteTimer) clearTimeout(cacheWriteTimer);
+  cacheWriteTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(`${USER_WORKSPACE_CACHE_PREFIX}${userId}`, JSON.stringify(snapshot));
+    } catch {
+      // Ignore quota exceeded errors on very large base64 payloads
+    }
+  }, 120);
 }
+
+// Keep alias so existing calls in store.ts continue to work seamlessly
+const persistGuestSnapshot = persistWorkspaceSnapshot;
+
+const initialStoredUser = getStoredLocalUser();
+const initialWorkspaceData = isGuestUser(initialStoredUser)
+  ? loadGuestWorkspace()
+  : loadUserWorkspaceCache(initialStoredUser?.id);
 
 let guestMigrationPromise: Promise<void> | null = null;
 
+const inFlightFetches = new Map<string, Promise<void>>();
+const lastFetchTimestamps = new Map<string, number>();
+
+function dedupeFetch(key: string, ttlMs: number, fn: () => Promise<void>): Promise<void> {
+  const existing = inFlightFetches.get(key);
+  if (existing) return existing;
+  const lastAt = lastFetchTimestamps.get(key) || 0;
+  if (ttlMs > 0 && Date.now() - lastAt < ttlMs) {
+    return Promise.resolve();
+  }
+  const promise = fn().finally(() => {
+    inFlightFetches.delete(key);
+    lastFetchTimestamps.set(key, Date.now());
+  });
+  inFlightFetches.set(key, promise);
+  return promise;
+}
+
+function mapDbQuestionRow(q: Record<string, any>): Question {
+  return {
+    id: q.id,
+    teacherId: q.teacher_id,
+    content: q.content,
+    courseId: q.course_id,
+    subjectId: q.subject_id,
+    classId: q.class_id,
+    questionType: q.question_type,
+    options: q.options || [],
+    difficulty: q.difficulty,
+    explanation: q.explanation,
+    imageUrl: q.image_url,
+    typeHeader: q.type_header,
+    chapterId: q.chapter_id || undefined,
+    topicId: q.topic_id || undefined,
+    categoryId: q.category_id || undefined,
+    cognitiveLevel: q.cognitive_level || DEFAULT_COGNITIVE_LEVEL,
+    marks: q.marks ?? undefined,
+    createdAt: q.created_at ? new Date(q.created_at).getTime() : Date.now(),
+    updatedAt: q.updated_at ? new Date(q.updated_at).getTime() : Date.now(),
+  };
+}
+
 export const useStore = create<AppState>()((set, get) => ({
   user: initialStoredUser,
-  courses: initialGuestData?.courses || [],
-  subjects: initialGuestData?.subjects || [],
-  classes: initialGuestData?.classes || [],
-  chapters: initialGuestData?.chapters || [],
-  topics: initialGuestData?.topics || [],
-  categories: initialGuestData?.categories || [],
-  questionPapers: initialGuestData?.questionPapers || [],
-  questions: initialGuestData?.questions || [],
-  paperQuestions: new Map(initialGuestData?.paperQuestionsEntries || []),
+  courses: initialWorkspaceData?.courses || [],
+  subjects: initialWorkspaceData?.subjects || [],
+  classes: initialWorkspaceData?.classes || [],
+  chapters: initialWorkspaceData?.chapters || [],
+  topics: initialWorkspaceData?.topics || [],
+  categories: initialWorkspaceData?.categories || [],
+  questionPapers: initialWorkspaceData?.questionPapers || [],
+  questions: initialWorkspaceData?.questions || [],
+  paperQuestions: new Map(initialWorkspaceData?.paperQuestionsEntries || []),
   sharedQuestions: getStoredLocalSharedQuestions(),
   notifications: getStoredLocalNotifications(),
   currentPaperId: null,
   loading: false,
 
   setUser: (user) => {
+    const prevUserId = get().user?.id;
     saveLocalUser(user);
+    if (user?.id && !isGuestUser(user) && prevUserId !== user.id) {
+      const cached = loadUserWorkspaceCache(user.id);
+      if (cached) {
+        set({
+          user,
+          courses: cached.courses,
+          subjects: cached.subjects,
+          classes: cached.classes,
+          chapters: cached.chapters,
+          topics: cached.topics,
+          categories: cached.categories,
+          questionPapers: cached.questionPapers,
+          questions: cached.questions,
+          paperQuestions: new Map(cached.paperQuestionsEntries),
+        });
+        return;
+      }
+    }
     set({ user });
   },
   enterGuestMode: () => {
@@ -560,276 +677,302 @@ export const useStore = create<AppState>()((set, get) => ({
   fetchCourses: async () => {
     const { user } = get();
     if (!user?.id || isGuestUser(user)) return;
-    
-    const { data, error } = await supabase
-      .from('courses')
-      .select('*')
-      .eq('teacher_id', user.id)
-      .order('name');
-    
-    if (error) {
-      console.error('Error fetching courses:', error);
-      return;
-    }
-    
-    if (data) {
-      const courses: Course[] = data.map(c => ({
-        id: c.id,
-        teacherId: c.teacher_id,
-        name: c.name,
-        createdAt: new Date(c.created_at).getTime(),
-        updatedAt: new Date(c.updated_at).getTime(),
-      }));
-      set({ courses });
-    }
+    return dedupeFetch(`courses:${user.id}`, 8000, async () => {
+      const { data, error } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('teacher_id', user.id)
+        .order('name');
+
+      if (error) {
+        console.error('Error fetching courses:', error);
+        return;
+      }
+
+      if (data) {
+        const courses: Course[] = data.map(c => ({
+          id: c.id,
+          teacherId: c.teacher_id,
+          name: c.name,
+          createdAt: new Date(c.created_at).getTime(),
+          updatedAt: new Date(c.updated_at).getTime(),
+        }));
+        set({ courses });
+        persistWorkspaceSnapshot(get());
+      }
+    });
   },
 
   fetchSubjects: async () => {
     const { user } = get();
     if (!user?.id || isGuestUser(user)) return;
-    
-    const { data, error } = await supabase
-      .from('subjects')
-      .select('*')
-      .eq('teacher_id', user.id)
-      .order('name');
-    
-    if (!error && data) {
-      const subjects: Subject[] = data.map(s => ({
-        id: s.id,
-        teacherId: s.teacher_id,
-        name: s.name,
-        createdAt: new Date(s.created_at).getTime(),
-        updatedAt: new Date(s.updated_at).getTime(),
-      }));
-      set({ subjects });
-    }
+    return dedupeFetch(`subjects:${user.id}`, 8000, async () => {
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('*')
+        .eq('teacher_id', user.id)
+        .order('name');
+
+      if (!error && data) {
+        const subjects: Subject[] = data.map(s => ({
+          id: s.id,
+          teacherId: s.teacher_id,
+          name: s.name,
+          createdAt: new Date(s.created_at).getTime(),
+          updatedAt: new Date(s.updated_at).getTime(),
+        }));
+        set({ subjects });
+        persistWorkspaceSnapshot(get());
+      }
+    });
   },
 
   fetchClasses: async () => {
     const { user } = get();
     if (!user?.id || isGuestUser(user)) return;
-    
-    const { data, error } = await supabase
-      .from('classes')
-      .select('*')
-      .eq('teacher_id', user.id)
-      .order('name');
-    
-    if (!error && data) {
-      const classes: Class[] = data.map(c => ({
-        id: c.id,
-        teacherId: c.teacher_id,
-        name: c.name,
-        createdAt: new Date(c.created_at).getTime(),
-        updatedAt: new Date(c.updated_at).getTime(),
-      }));
-      set({ classes });
-    }
+    return dedupeFetch(`classes:${user.id}`, 8000, async () => {
+      const { data, error } = await supabase
+        .from('classes')
+        .select('*')
+        .eq('teacher_id', user.id)
+        .order('name');
+
+      if (!error && data) {
+        const classes: Class[] = data.map(c => ({
+          id: c.id,
+          teacherId: c.teacher_id,
+          name: c.name,
+          createdAt: new Date(c.created_at).getTime(),
+          updatedAt: new Date(c.updated_at).getTime(),
+        }));
+        set({ classes });
+        persistWorkspaceSnapshot(get());
+      }
+    });
   },
 
   fetchQuestionPapers: async () => {
     const { user } = get();
     if (!user?.id || isGuestUser(user)) return;
-    
-    set({ loading: true });
-    const { data, error } = await supabase
-      .from('qp_metadata')
-      .select('*')
-      .eq('teacher_id', user.id)
-      .order('updated_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching papers:', error);
+    return dedupeFetch(`papers:${user.id}`, 4000, async () => {
+      const hadPapers = get().questionPapers.length > 0;
+      if (!hadPapers) set({ loading: true });
+      const { data, error } = await supabase
+        .from('qp_metadata')
+        .select('*')
+        .eq('teacher_id', user.id)
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching papers:', error);
+        set({ loading: false });
+        return;
+      }
+
+      if (data) {
+        const questionPapers: QuestionPaper[] = data.map(qp => ({
+          id: qp.id,
+          qpCode: qp.qp_code,
+          teacherId: qp.teacher_id,
+          title: qp.title,
+          date: qp.date,
+          maxMarks: qp.max_marks,
+          courseId: qp.course_id,
+          subjectId: qp.subject_id,
+          classId: qp.class_id,
+          instructions: qp.instructions,
+          isPublished: qp.is_published || false,
+          totalMarks: qp.max_marks || 0,
+          duration: qp.duration || 0,
+          headerConfig: qp.header_config || {},
+          createdAt: new Date(qp.created_at).getTime(),
+          updatedAt: new Date(qp.updated_at).getTime(),
+        }));
+        set({ questionPapers, loading: false });
+        persistWorkspaceSnapshot(get());
+        return;
+      }
       set({ loading: false });
-      return;
-    }
-    
-    if (data) {
-      const questionPapers: QuestionPaper[] = data.map(qp => ({
-        id: qp.id,
-        qpCode: qp.qp_code,
-        teacherId: qp.teacher_id,
-        title: qp.title,
-        date: qp.date,
-        maxMarks: qp.max_marks,
-        courseId: qp.course_id,
-        subjectId: qp.subject_id,
-        classId: qp.class_id,
-        instructions: qp.instructions,
-        isPublished: qp.is_published || false,
-        totalMarks: qp.max_marks || 0,
-        duration: qp.duration || 0,
-        headerConfig: qp.header_config || {},
-        createdAt: new Date(qp.created_at).getTime(),
-        updatedAt: new Date(qp.updated_at).getTime(),
-      }));
-      set({ questionPapers });
-    }
-    set({ loading: false });
+    });
   },
 
   fetchQuestions: async () => {
     const { user } = get();
     if (!user?.id || isGuestUser(user)) return;
+    return dedupeFetch(`questions:${user.id}`, 5000, async () => {
+      const { data, error } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('teacher_id', user.id)
+        .order('created_at', { ascending: false });
 
-    const { data, error } = await supabase
-      .from('questions')
-      .select('*')
-      .eq('teacher_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      const questions: Question[] = data.map(q => ({
-        id: q.id,
-        teacherId: q.teacher_id,
-        content: q.content,
-        courseId: q.course_id,
-        subjectId: q.subject_id,
-        classId: q.class_id,
-        questionType: q.question_type,
-        options: q.options || [],
-        difficulty: q.difficulty,
-        explanation: q.explanation,
-        imageUrl: q.image_url,
-        typeHeader: q.type_header,
-        chapterId: q.chapter_id || undefined,
-        topicId: q.topic_id || undefined,
-        categoryId: q.category_id || undefined,
-        cognitiveLevel: q.cognitive_level || DEFAULT_COGNITIVE_LEVEL,
-        marks: q.marks ?? undefined,
-        createdAt: new Date(q.created_at).getTime(),
-        updatedAt: new Date(q.updated_at).getTime(),
-      }));
-      set({ questions });
-    }
+      if (!error && data) {
+        const questions: Question[] = data.map(mapDbQuestionRow);
+        set({ questions });
+        persistWorkspaceSnapshot(get());
+      }
+    });
   },
 
   fetchPaperQuestions: async (paperId: string) => {
     if (isGuestUser(get().user)) return;
-    const { data, error } = await supabase
-      .from('paper_questions')
-      .select('*')
-      .eq('paper_id', paperId)
-      .order('order_index', { ascending: true });
+    return dedupeFetch(`paperQuestions:${paperId}`, 2000, async () => {
+      // Join `questions(*)` so the paper's questions and their content arrive in a single fast round-trip
+      let { data, error } = await supabase
+        .from('paper_questions')
+        .select('*, questions(*)')
+        .eq('paper_id', paperId)
+        .order('order_index', { ascending: true });
 
-    if (!error && data) {
-      const pq: PaperQuestion[] = data.map(item => ({
-        id: item.id,
-        paperId: item.paper_id,
-        questionId: item.question_id,
-        section: item.section || '',
-        parentId: item.parent_id,
-        marks: item.marks || 0,
-        orderIndex: item.order_index,
-        parentSharedId: item.parent_shared_id || null,
-        originType: item.origin_type || 'ORIGINAL',
-        isOptional: item.is_optional || false,
-        subNumberingStyle: item.sub_numbering_style || null,
-        createdAt: new Date(item.created_at).getTime(),
-        updatedAt: new Date(item.updated_at).getTime(),
-      }));
-      set((state) => {
-        const newPaperQuestions = new Map(state.paperQuestions);
-        newPaperQuestions.set(paperId, pq);
-        return { paperQuestions: newPaperQuestions };
-      });
-    }
+      if (error) {
+        // Fallback if relational join is unavailable
+        const fallback = await supabase
+          .from('paper_questions')
+          .select('*')
+          .eq('paper_id', paperId)
+          .order('order_index', { ascending: true });
+        data = fallback.data;
+        error = fallback.error;
+      }
+
+      if (!error && data) {
+        const joinedQuestions: Question[] = [];
+        const pq: PaperQuestion[] = data.map((item: Record<string, any>) => {
+          if (item.questions && typeof item.questions === 'object' && !Array.isArray(item.questions)) {
+            joinedQuestions.push(mapDbQuestionRow(item.questions));
+          }
+          return {
+            id: item.id,
+            paperId: item.paper_id,
+            questionId: item.question_id,
+            section: item.section || '',
+            parentId: item.parent_id,
+            marks: item.marks || 0,
+            orderIndex: item.order_index,
+            parentSharedId: item.parent_shared_id || null,
+            originType: item.origin_type || 'ORIGINAL',
+            isOptional: item.is_optional || false,
+            subNumberingStyle: item.sub_numbering_style || null,
+            createdAt: new Date(item.created_at).getTime(),
+            updatedAt: new Date(item.updated_at).getTime(),
+          };
+        });
+        set((state) => {
+          const newPaperQuestions = new Map(state.paperQuestions);
+          newPaperQuestions.set(paperId, pq);
+          if (joinedQuestions.length === 0) {
+            return { paperQuestions: newPaperQuestions };
+          }
+          const byId = new Map(state.questions.map(q => [q.id, q]));
+          for (const jq of joinedQuestions) {
+            byId.set(jq.id, jq);
+          }
+          return {
+            paperQuestions: newPaperQuestions,
+            questions: Array.from(byId.values()),
+          };
+        });
+        persistWorkspaceSnapshot(get());
+      }
+    });
   },
 
   fetchSharedQuestions: async () => {
     const localStored = getStoredLocalSharedQuestions();
     if (isGuestUser(get().user)) { set({ sharedQuestions: localStored }); return; }
-    try {
-      const { data, error } = await supabase
-        .from('shared_questions')
-        .select('*')
-        .order('usage_count', { ascending: false });
+    return dedupeFetch('sharedQuestions', 15000, async () => {
+      try {
+        const { data, error } = await supabase
+          .from('shared_questions')
+          .select('*')
+          .order('usage_count', { ascending: false });
 
-      if (!error && data && data.length > 0) {
-        const dbList: SharedQuestion[] = data.map(row => {
-          const matchingLocal =
-            localStored.find(lq => lq.id === row.id || (row.content_hash && lq.contentHash === row.content_hash)) ||
-            INITIAL_SHARED_QUESTIONS.find(iq => iq.id === row.id || (row.content_hash && iq.contentHash === row.content_hash));
-          const rowSubqs = Array.isArray(row.subquestions) && row.subquestions.length > 0
-            ? row.subquestions
-            : matchingLocal?.subquestions;
-          return {
-            id: row.id,
-            content: row.content,
-            contentHash: row.content_hash,
-            createdByUserId: row.created_by_user_id,
-            authorName: row.author_name || 'Fellow Educator',
-            courseId: row.course_id,
-            subjectId: row.subject_id,
-            classId: row.class_id,
-            topic: row.topic,
-            questionType: row.question_type,
-            options: row.options || [],
-            difficulty: row.difficulty || 'medium',
-            typeHeader: row.type_header,
-            usageCount: row.usage_count || 0,
-            courseName: row.course_name || undefined,
-            subjectName: row.subject_name || undefined,
-            className: row.class_name || undefined,
-            chapter: row.chapter || undefined,
-            category: row.category || undefined,
-            cognitiveLevel: row.cognitive_level || DEFAULT_COGNITIVE_LEVEL,
-            marks: row.marks ?? matchingLocal?.marks ?? undefined,
-            subquestions: rowSubqs && rowSubqs.length > 0 ? rowSubqs : undefined,
-            parentId: row.parent_id || matchingLocal?.parentId || undefined,
-            createdAt: new Date(row.created_at).getTime(),
-          };
-        });
+        if (!error && data && data.length > 0) {
+          const dbList: SharedQuestion[] = data.map(row => {
+            const matchingLocal =
+              localStored.find(lq => lq.id === row.id || (row.content_hash && lq.contentHash === row.content_hash)) ||
+              INITIAL_SHARED_QUESTIONS.find(iq => iq.id === row.id || (row.content_hash && iq.contentHash === row.content_hash));
+            const rowSubqs = Array.isArray(row.subquestions) && row.subquestions.length > 0
+              ? row.subquestions
+              : matchingLocal?.subquestions;
+            return {
+              id: row.id,
+              content: row.content,
+              contentHash: row.content_hash,
+              createdByUserId: row.created_by_user_id,
+              authorName: row.author_name || 'Fellow Educator',
+              courseId: row.course_id,
+              subjectId: row.subject_id,
+              classId: row.class_id,
+              topic: row.topic,
+              questionType: row.question_type,
+              options: row.options || [],
+              difficulty: row.difficulty || 'medium',
+              typeHeader: row.type_header,
+              usageCount: row.usage_count || 0,
+              courseName: row.course_name || undefined,
+              subjectName: row.subject_name || undefined,
+              className: row.class_name || undefined,
+              chapter: row.chapter || undefined,
+              category: row.category || undefined,
+              cognitiveLevel: row.cognitive_level || DEFAULT_COGNITIVE_LEVEL,
+              marks: row.marks ?? matchingLocal?.marks ?? undefined,
+              subquestions: rowSubqs && rowSubqs.length > 0 ? rowSubqs : undefined,
+              parentId: row.parent_id || matchingLocal?.parentId || undefined,
+              createdAt: new Date(row.created_at).getTime(),
+            };
+          });
 
-        // Ensure seeded multi-part shared questions with subquestions are also available
-        const existingIds = new Set(dbList.map(q => q.id));
-        const existingHashes = new Set(dbList.map(q => q.contentHash).filter(Boolean));
-        const seededMissing = INITIAL_SHARED_QUESTIONS.filter(
-          iq => !existingIds.has(iq.id) && (!iq.contentHash || !existingHashes.has(iq.contentHash))
-        );
-        const list = [...seededMissing, ...dbList];
-        set({ sharedQuestions: list });
-        saveLocalSharedQuestions(list);
-        return;
-      }
-    } catch {}
+          // Ensure seeded multi-part shared questions with subquestions are also available
+          const existingIds = new Set(dbList.map(q => q.id));
+          const existingHashes = new Set(dbList.map(q => q.contentHash).filter(Boolean));
+          const seededMissing = INITIAL_SHARED_QUESTIONS.filter(
+            iq => !existingIds.has(iq.id) && (!iq.contentHash || !existingHashes.has(iq.contentHash))
+          );
+          const list = [...seededMissing, ...dbList];
+          set({ sharedQuestions: list });
+          saveLocalSharedQuestions(list);
+          return;
+        }
+      } catch {}
 
-    // Fallback to local storage / seeded list
-    set({ sharedQuestions: localStored });
+      // Fallback to local storage / seeded list
+      set({ sharedQuestions: localStored });
+    });
   },
 
   fetchNotifications: async () => {
     const { user } = get();
     if (!user?.id || isGuestUser(user)) return;
+    return dedupeFetch(`notifications:${user.id}`, 10000, async () => {
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('recipient_id', user.id)
+          .order('created_at', { ascending: false });
 
-    try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('recipient_id', user.id)
-        .order('created_at', { ascending: false });
+        if (!error && data && data.length > 0) {
+          const notifs: AppNotification[] = data.map(n => ({
+            id: n.id,
+            recipientId: n.recipient_id,
+            senderId: n.sender_id,
+            senderName: n.sender_name || 'Educator',
+            title: n.title,
+            message: (n.message || '').replace(/&nbsp;/gi, ' '),
+            questionContent: n.question_content,
+            createdAt: new Date(n.created_at).getTime(),
+            read: n.read || false,
+          }));
+          set({ notifications: notifs });
+          saveLocalNotifications(notifs);
+          return;
+        }
+      } catch {}
 
-      if (!error && data && data.length > 0) {
-        const notifs: AppNotification[] = data.map(n => ({
-          id: n.id,
-          recipientId: n.recipient_id,
-          senderId: n.sender_id,
-          senderName: n.sender_name || 'Educator',
-          title: n.title,
-          message: (n.message || '').replace(/&nbsp;/gi, ' '),
-          questionContent: n.question_content,
-          createdAt: new Date(n.created_at).getTime(),
-          read: n.read || false,
-        }));
-        set({ notifications: notifs });
-        saveLocalNotifications(notifs);
-        return;
-      }
-    } catch {}
-
-    const stored = getStoredLocalNotifications().filter(n => n.recipientId === user.id || !n.recipientId);
-    set({ notifications: stored });
+      const stored = getStoredLocalNotifications().filter(n => n.recipientId === user.id || !n.recipientId);
+      set({ notifications: stored });
+    });
   },
 
   markNotificationAsRead: async (id: string) => {
@@ -858,6 +1001,8 @@ export const useStore = create<AppState>()((set, get) => ({
   createCourse: async (name: string) => {
     const { user } = get();
     if (!user?.id) return '';
+    const existing = get().courses.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
     const id = generateId();
     set((state) => ({ courses: [...state.courses, {
       id,
@@ -865,7 +1010,7 @@ export const useStore = create<AppState>()((set, get) => ({
       name,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    }] }));
+    }].sort((a, b) => a.name.localeCompare(b.name)) }));
 
     if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
     await supabase.from('courses').insert({ id, teacher_id: user.id, name });
@@ -889,6 +1034,8 @@ export const useStore = create<AppState>()((set, get) => ({
   createSubject: async (name: string) => {
     const { user } = get();
     if (!user?.id) return '';
+    const existing = get().subjects.find(s => s.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
     const id = generateId();
     set((state) => ({ subjects: [...state.subjects, {
       id,
@@ -896,7 +1043,7 @@ export const useStore = create<AppState>()((set, get) => ({
       name,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    }] }));
+    }].sort((a, b) => a.name.localeCompare(b.name)) }));
 
     if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
     await supabase.from('subjects').insert({ id, teacher_id: user.id, name });
@@ -920,6 +1067,8 @@ export const useStore = create<AppState>()((set, get) => ({
   createClass: async (name: string) => {
     const { user } = get();
     if (!user?.id) return '';
+    const existing = get().classes.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
     const id = generateId();
     set((state) => ({ classes: [...state.classes, {
       id,
@@ -927,7 +1076,7 @@ export const useStore = create<AppState>()((set, get) => ({
       name,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    }] }));
+    }].sort((a, b) => a.name.localeCompare(b.name)) }));
 
     if (isGuestUser(user)) { persistGuestSnapshot(get()); return id; }
     await supabase.from('classes').insert({ id, teacher_id: user.id, name });
@@ -1114,9 +1263,9 @@ export const useStore = create<AppState>()((set, get) => ({
     if (updates.title !== undefined) supabaseUpdates.title = updates.title;
     if (updates.date !== undefined) supabaseUpdates.date = updates.date;
     if (updates.maxMarks !== undefined) supabaseUpdates.max_marks = updates.maxMarks;
-    if (updates.courseId !== undefined) supabaseUpdates.course_id = updates.courseId;
-    if (updates.subjectId !== undefined) supabaseUpdates.subject_id = updates.subjectId;
-    if (updates.classId !== undefined) supabaseUpdates.class_id = updates.classId;
+    if ('courseId' in updates) supabaseUpdates.course_id = updates.courseId || null;
+    if ('subjectId' in updates) supabaseUpdates.subject_id = updates.subjectId || null;
+    if ('classId' in updates) supabaseUpdates.class_id = updates.classId || null;
     if (updates.instructions !== undefined) supabaseUpdates.instructions = updates.instructions;
     if (updates.isPublished !== undefined) supabaseUpdates.is_published = updates.isPublished;
     if (updates.duration !== undefined) supabaseUpdates.duration = updates.duration;
@@ -1363,9 +1512,9 @@ export const useStore = create<AppState>()((set, get) => ({
     if (updates.content !== undefined) supabaseUpdates.content = updates.content;
     if (updates.questionType !== undefined) supabaseUpdates.question_type = updates.questionType;
     if (updates.options !== undefined) supabaseUpdates.options = updates.options;
-    if (updates.courseId !== undefined) supabaseUpdates.course_id = updates.courseId;
-    if (updates.subjectId !== undefined) supabaseUpdates.subject_id = updates.subjectId;
-    if (updates.classId !== undefined) supabaseUpdates.class_id = updates.classId;
+    if ('courseId' in updates) supabaseUpdates.course_id = updates.courseId || null;
+    if ('subjectId' in updates) supabaseUpdates.subject_id = updates.subjectId || null;
+    if ('classId' in updates) supabaseUpdates.class_id = updates.classId || null;
     if (updates.difficulty !== undefined) supabaseUpdates.difficulty = updates.difficulty;
     if (updates.explanation !== undefined) supabaseUpdates.explanation = updates.explanation;
     if (updates.imageUrl !== undefined) supabaseUpdates.image_url = updates.imageUrl;
