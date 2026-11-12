@@ -135,6 +135,50 @@ function SubquestionsModal({
           </button>
         </div>
 
+        {/* Parent Full Question Stem */}
+        <div
+          style={{
+            padding: '14px 20px',
+            borderBottom: '1px solid #e4e7ec',
+            background: '#fcfdfe',
+            maxHeight: '28vh',
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              color: '#64748b',
+              marginBottom: 6,
+            }}
+          >
+            Main Question
+          </div>
+          <div
+            className="tex2jax_process"
+            style={{
+              fontSize: 13.5,
+              lineHeight: 1.55,
+              color: '#0f172a',
+              wordBreak: 'break-word',
+            }}
+            dangerouslySetInnerHTML={{ __html: preprocessMathHtml(question.content) }}
+          />
+          {question.questionType === 'mcq' && question.options && question.options.length > 0 && (
+            <div className="qb-card-options tex2jax_process" style={{ marginTop: 8 }}>
+              {question.options.map((opt, oi) => (
+                <div key={oi} className="qb-card-opt-item">
+                  <span className="qb-opt-letter">{String.fromCharCode(65 + oi)}.</span>
+                  <span dangerouslySetInnerHTML={{ __html: preprocessMathHtml(opt) }} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Modal Toolbar / Select All & Total Marks */}
         <div className="qb-subq-modal-toolbar">
           <label className="qb-select-all-label">
@@ -892,33 +936,34 @@ export default function QuestionBankSidebar({
                       )}
                     </div>
 
-                    {hasSubquestions ? (
+                    <div className="qb-action-pair">
                       <button
-                        className="qb-manage-subq-btn"
+                        className="qb-btn-icon"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedParentModal({ question: q, isShared: true });
+                          onViewQuestion({
+                            ...q,
+                            marks: totalAllocatedMarks,
+                            isShared: true,
+                            targetSection: sections?.[0]?.title,
+                          });
                         }}
-                        title="Select parts to insert"
+                        title="Preview full question"
                       >
-                        <Layers size={12} /> Select parts
+                        <Eye size={13} />
                       </button>
-                    ) : (
-                      <div className="qb-action-pair">
+                      {hasSubquestions ? (
                         <button
-                          className="qb-btn-icon"
+                          className="qb-manage-subq-btn"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onViewQuestion({
-                              ...q,
-                              isShared: true,
-                              targetSection: sections?.[0]?.title,
-                            });
+                            setSelectedParentModal({ question: q, isShared: true });
                           }}
-                          title="Preview full question"
+                          title="Select parts to insert"
                         >
-                          <Eye size={13} />
+                          <Layers size={12} /> Select parts
                         </button>
+                      ) : (
                         <button
                           className="qb-btn-insert"
                           onClick={(e) => {
@@ -932,8 +977,8 @@ export default function QuestionBankSidebar({
                         >
                           <Plus size={13} /> Insert
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -1026,33 +1071,35 @@ export default function QuestionBankSidebar({
                     <span style={{ textTransform: 'capitalize' }}>{q.difficulty}</span>
                   </div>
 
-                  {hasSubquestions ? (
+                  <div className="qb-action-pair">
                     <button
-                      className="qb-manage-subq-btn"
+                      className="qb-btn-icon"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedParentModal({ question: q, isShared: false });
+                        onViewQuestion({
+                          ...q,
+                          marks: totalAllocatedMarks,
+                          topic: tpName || chName,
+                          isShared: false,
+                          targetSection: sections?.[0]?.title,
+                        });
                       }}
-                      title="Select parts to insert"
+                      title="Preview full question"
                     >
-                      <Layers size={12} /> Select parts
+                      <Eye size={13} />
                     </button>
-                  ) : (
-                    <div className="qb-action-pair">
+                    {hasSubquestions ? (
                       <button
-                        className="qb-btn-icon"
+                        className="qb-manage-subq-btn"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onViewQuestion({
-                            ...q,
-                            isShared: false,
-                            targetSection: sections?.[0]?.title,
-                          });
+                          setSelectedParentModal({ question: q, isShared: false });
                         }}
-                        title="Preview full question"
+                        title="Select parts to insert"
                       >
-                        <Eye size={13} />
+                        <Layers size={12} /> Select parts
                       </button>
+                    ) : (
                       <button
                         className="qb-btn-insert"
                         onClick={(e) => {
@@ -1066,8 +1113,8 @@ export default function QuestionBankSidebar({
                       >
                         <Plus size={13} /> Insert
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             );

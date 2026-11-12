@@ -4352,30 +4352,89 @@ export default function Editor() {
             const targetSection = vq.targetSection || draftSection || sections[0]?.title || 'Section A';
             const parentId = vq.parentQuestionId || undefined;
             const isOpt = vq.isOptional || false;
+            const subqs = vq.subquestions || [];
+            const hasSubqs = subqs.length > 0;
+            const totalMarksForSet = hasSubqs
+              ? subqs.reduce((acc, s) => acc + (s.marks || 1), 0)
+              : (vq.marks || 1);
+
             const matchedShared = sharedQuestions.find(sq => sq.id === vq.parentSharedId || sq.id === vq.id);
+            let insertedParentPqId = '';
             if (matchedShared) {
-              await importSharedQuestionToPaper(paper.id, matchedShared, targetSection, 1, parentId, isOpt);
+              insertedParentPqId = await importSharedQuestionToPaper(
+                paper.id,
+                { ...matchedShared, marks: totalMarksForSet },
+                targetSection,
+                totalMarksForSet,
+                parentId,
+                isOpt
+              );
             } else {
-              await createAndAddQuestion(
+              insertedParentPqId = await createAndAddQuestion(
                 paper.id,
                 vq.content,
                 vq.questionType,
                 vq.options,
                 targetSection,
                 parentId,
-                vq.marks || 1,
-                undefined,
+                totalMarksForSet,
+                paper.courseId,
                 paper.subjectId,
                 paper.classId,
                 vq.difficulty || 'medium',
-                undefined,
+                vq.explanation,
+                vq.imageUrl,
+                vq.typeHeader,
+                isOpt,
                 vq.parentSharedId || undefined,
-                undefined,
-                isOpt
+                vq.isShared ? 'SHARED' : 'ORIGINAL',
+                {
+                  courseId: vq.courseId,
+                  subjectId: vq.subjectId,
+                  classId: vq.classId,
+                  chapterId: vq.chapterId,
+                  topicId: vq.topicId,
+                  categoryId: vq.categoryId,
+                  cognitiveLevel: vq.cognitiveLevel,
+                }
               );
             }
+
+            if (hasSubqs && insertedParentPqId) {
+              for (const sq of subqs) {
+                await createAndAddQuestion(
+                  paper.id,
+                  sq.content,
+                  sq.questionType || 'subjective',
+                  sq.options,
+                  targetSection,
+                  insertedParentPqId,
+                  sq.marks || 1,
+                  paper.courseId,
+                  paper.subjectId,
+                  paper.classId,
+                  sq.difficulty || 'medium',
+                  sq.explanation,
+                  undefined,
+                  undefined,
+                  false,
+                  undefined,
+                  matchedShared || vq.isShared ? 'SHARED' : 'ORIGINAL',
+                  {
+                    cognitiveLevel: sq.cognitiveLevel,
+                  }
+                );
+              }
+            }
+
             setViewingQuestion(null);
-            showToastMessage(parentId ? 'Added as subquestion!' : 'Question added to paper!');
+            showToastMessage(
+              hasSubqs
+                ? `Question and ${subqs.length} subquestions added to paper!`
+                : parentId
+                  ? 'Added as subquestion!'
+                  : 'Question added to paper!'
+            );
           }}
         />
       )}
