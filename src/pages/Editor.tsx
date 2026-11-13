@@ -2353,7 +2353,7 @@ export default function Editor() {
     return (
       <div className="editor-layout" style={{ alignItems: 'center', justifyContent: 'center' }}>
         <p>Paper not found</p>
-        <button className="btn btn-primary" onClick={() => navigate('/')}>Go to Dashboard</button>
+        <button className="btn btn-primary" onClick={() => navigate('/dashboard')}>Go to Dashboard</button>
       </div>
     );
   }
@@ -2533,7 +2533,7 @@ export default function Editor() {
       {/* TOP TOOLBAR */}
       <div className="editor-top-toolbar">
         <div className="toolbar-left">
-          <button className="toolbar-icon-btn" onClick={() => navigate('/')} title="Back to Dashboard">
+          <button className="toolbar-icon-btn" onClick={() => navigate('/dashboard')} title="Back to Dashboard">
             <ArrowLeft size={18} />
           </button>
           <div className="toolbar-title-group">

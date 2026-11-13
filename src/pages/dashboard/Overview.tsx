@@ -124,7 +124,7 @@ export default function Overview() {
                 <span>{user.schoolName}</span>
               </>
             ) : (
-              <Link to="/settings?tab=profile" className="qf-studio-hero__setup-link">+ Set school name</Link>
+              <Link to="/dashboard/settings?tab=profile" className="qf-studio-hero__setup-link">+ Set school name</Link>
             )}
           </div>
 
@@ -151,10 +151,10 @@ export default function Overview() {
         </div>
 
         <div className="qf-studio-hero__actions">
-          <button type="button" className="qf-btn qf-btn--ghost" onClick={() => navigate('/schedule')}>
+          <button type="button" className="qf-btn qf-btn--ghost" onClick={() => navigate('/dashboard/schedule')}>
             <CalendarDays size={16} /> Schedule
           </button>
-          <button type="button" className="qf-btn qf-btn--secondary" onClick={() => navigate('/question-bank')}>
+          <button type="button" className="qf-btn qf-btn--secondary" onClick={() => navigate('/dashboard/question-bank')}>
             <Library size={16} /> Question bank
             <span className="qf-count-pill">{bankStats.totalPersonal + bankStats.communityTotal}</span>
           </button>
@@ -178,7 +178,7 @@ export default function Overview() {
               </h2>
               <p className="qf-card__subtitle">Recent assessments &amp; quick actions</p>
             </div>
-            <Link to="/papers" className="qf-link-btn">All papers <ArrowRight size={14} /></Link>
+            <Link to="/dashboard/papers" className="qf-link-btn">All papers <ArrowRight size={14} /></Link>
           </div>
 
           <div className="qf-wb-list">
@@ -241,7 +241,7 @@ export default function Overview() {
               </h2>
               <p className="qf-card__subtitle">Next 7 days &amp; upcoming schedule</p>
             </div>
-            <Link to="/schedule" className="qf-link-btn">Schedule <ArrowRight size={14} /></Link>
+            <Link to="/dashboard/schedule" className="qf-link-btn">Schedule <ArrowRight size={14} /></Link>
           </div>
 
           <div className="qf-week-strip" role="list" aria-label="Next 7 days">
@@ -302,19 +302,19 @@ export default function Overview() {
               </h2>
               <p className="qf-card__subtitle">Your question mix &amp; community reach</p>
             </div>
-            <Link to="/question-bank?tab=mine" className="qf-link-btn">Browse bank <ArrowRight size={14} /></Link>
+            <Link to="/dashboard/question-bank?tab=mine" className="qf-link-btn">Browse bank <ArrowRight size={14} /></Link>
           </div>
 
           <div className="qf-blueprint-metrics">
-            <Link to="/question-bank?tab=mine" className="qf-blueprint-metric">
+            <Link to="/dashboard/question-bank?tab=mine" className="qf-blueprint-metric">
               <span className="qf-blueprint-metric__val">{bankStats.totalPersonal}</span>
               <span className="qf-blueprint-metric__lbl">Authored by you</span>
             </Link>
-            <Link to="/question-bank" className="qf-blueprint-metric">
+            <Link to="/dashboard/question-bank" className="qf-blueprint-metric">
               <span className="qf-blueprint-metric__val">{bankStats.communityTotal}</span>
               <span className="qf-blueprint-metric__lbl">Community pool</span>
             </Link>
-            <Link to="/question-bank?tab=contributions" className="qf-blueprint-metric">
+            <Link to="/dashboard/question-bank?tab=contributions" className="qf-blueprint-metric">
               <span className="qf-blueprint-metric__val">{bankStats.reuse}×</span>
               <span className="qf-blueprint-metric__lbl">Peer reuses ({bankStats.sharedCount} shared)</span>
             </Link>
@@ -368,7 +368,7 @@ export default function Overview() {
               </h2>
               <p className="qf-card__subtitle">Your active curriculum shelves</p>
             </div>
-            <Link to="/settings?tab=academic" className="qf-link-btn">Configure <ArrowRight size={14} /></Link>
+            <Link to="/dashboard/settings?tab=academic" className="qf-link-btn">Configure <ArrowRight size={14} /></Link>
           </div>
 
           {subjectBreakdown.length > 0 ? (

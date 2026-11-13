@@ -41,7 +41,7 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const user = useStore((s) => s.user);
 
   if (!user?.id) {
-    return <Navigate to="/home" replace />;
+    return <Navigate to="/" replace />;
   }
   return children;
 }
@@ -50,7 +50,7 @@ function HomeRoute() {
   const user = useStore((s) => s.user);
 
   if (user?.id && !isGuestUser(user)) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
   return <Landing />;
 }
@@ -201,9 +201,10 @@ function App() {
     <BrowserRouter>
       <Suspense fallback={<RouteLoader />}>
         <Routes>
-          <Route path="/home" element={<HomeRoute />} />
+          <Route path="/" element={<HomeRoute />} />
+          <Route path="/home" element={<Navigate to="/" replace />} />
           <Route
-            path="/"
+            path="/dashboard"
             element={
               <ProtectedRoute>
                 <DashboardLayout />

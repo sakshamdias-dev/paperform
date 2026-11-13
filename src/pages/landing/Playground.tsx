@@ -630,7 +630,7 @@ export default function Playground({ open, onClose }: { open: boolean; onClose: 
               onClick={() => {
                 if (!user?.id) enterGuestMode();
                 onClose();
-                navigate('/');
+                navigate('/dashboard');
               }}
             >
               Create paper in QuestForma

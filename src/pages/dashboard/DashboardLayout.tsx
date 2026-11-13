@@ -81,7 +81,7 @@ function NotificationsPopover() {
           <button
             type="button"
             className="qf-notif-popover__footer"
-            onClick={() => { setOpen(false); navigate('/notifications'); }}
+            onClick={() => { setOpen(false); navigate('/dashboard/notifications'); }}
           >
             View all notifications
           </button>
@@ -142,16 +142,16 @@ export default function DashboardLayout() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const q = query.trim();
-    navigate(q ? `/papers?q=${encodeURIComponent(q)}` : '/papers');
+    navigate(q ? `/dashboard/papers?q=${encodeURIComponent(q)}` : '/dashboard/papers');
     searchRef.current?.blur();
   };
 
   const navItems = [
-    { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-    { to: '/papers', label: 'My Papers', icon: FileText, count: questionPapers.length },
-    { to: '/schedule', label: 'Exam Schedule', icon: CalendarDays },
-    { to: '/question-bank', label: 'Question Bank', icon: Library },
-    { to: '/notifications', label: 'Notifications', icon: Bell, count: unread, highlight: unread > 0 },
+    { to: '/dashboard', label: 'Overview', icon: LayoutDashboard, end: true },
+    { to: '/dashboard/papers', label: 'My Papers', icon: FileText, count: questionPapers.length },
+    { to: '/dashboard/schedule', label: 'Exam Schedule', icon: CalendarDays },
+    { to: '/dashboard/question-bank', label: 'Question Bank', icon: Library },
+    { to: '/dashboard/notifications', label: 'Notifications', icon: Bell, count: unread, highlight: unread > 0 },
   ];
 
   return (
@@ -189,7 +189,7 @@ export default function DashboardLayout() {
         </nav>
 
         <div className="qf-sidebar__bottom">
-          <NavLink to="/settings" onClick={closeOnMobile} className={({ isActive }) => `qf-nav-item ${isActive ? 'is-active' : ''}`}>
+          <NavLink to="/dashboard/settings" onClick={closeOnMobile} className={({ isActive }) => `qf-nav-item ${isActive ? 'is-active' : ''}`}>
             <Settings size={18} />
             <span>Settings</span>
           </NavLink>
@@ -208,12 +208,12 @@ export default function DashboardLayout() {
                 ? [
                   { label: 'Sign in', icon: <LogIn size={16} />, onSelect: () => setShowSignInModal(true) },
                   'divider',
-                  { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/settings?tab=profile') },
-                  { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/settings') },
+                  { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/dashboard/settings?tab=profile') },
+                  { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/dashboard/settings') },
                 ]
                 : [
-                  { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/settings?tab=profile') },
-                  { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/settings') },
+                  { label: 'Profile', icon: <UserRound size={16} />, onSelect: () => navigate('/dashboard/settings?tab=profile') },
+                  { label: 'Settings', icon: <Settings size={16} />, onSelect: () => navigate('/dashboard/settings') },
                 ]
             }
             trigger={({ open, toggle }) => (
@@ -298,7 +298,7 @@ export default function DashboardLayout() {
         <button
           type="button"
           className="qf-floating-lp-btn"
-          onClick={() => navigate('/home')}
+          onClick={() => navigate('/')}
           title="Back to Home"
         >
           <ArrowLeft size={15} />

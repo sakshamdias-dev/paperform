@@ -198,7 +198,7 @@ export default function Landing() {
 
   const handleCreatePaper = () => {
     if (!user?.id) enterGuestMode();
-    navigate('/');
+    navigate('/dashboard');
   };
 
   return (

@@ -523,7 +523,7 @@ export default function QuestionBank() {
         <Info size={16} />
         <span>
           To add a question to a paper, open the paper in the editor and use the <strong>Question Bank</strong> panel.{' '}
-          <Link to="/papers">Go to my papers</Link>
+          <Link to="/dashboard/papers">Go to my papers</Link>
         </span>
       </div>
 
