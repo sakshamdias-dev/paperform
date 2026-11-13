@@ -1,13 +1,11 @@
-// MathJax loader & rendering utility
+// Synchronous KaTeX math rendering & HTML preprocessing utility
+import katex from 'katex';
 
 declare global {
   interface Window {
     MathJax: any;
   }
 }
-
-let isRendering = false;
-let pendingRender = false;
 
 export function cleanImageHtml(html: string | undefined | null): string {
   if (!html) return '';
@@ -130,18 +128,33 @@ export function quillFormulaToLatex(html: string | undefined | null): string {
   return replaceQuillFormulas(html);
 }
 
+const KATEX_MACROS: Record<string, string> = {
+  '\\degree': '^\\circ',
+};
+
+function renderLatexToKatex(rawLatex: string, displayMode: boolean): string {
+  const cleaned = decodeHtmlAttr(rawLatex)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .trim();
+  if (!cleaned) return '';
+  try {
+    return katex.renderToString(cleaned, {
+      displayMode,
+      throwOnError: false,
+      strict: false,
+      macros: KATEX_MACROS,
+    });
+  } catch {
+    return rawLatex;
+  }
+}
+
 export function preprocessMathHtml(html: string | undefined | null): string {
   if (!html) return '';
   let processed = cleanImageHtml(html);
 
   // Convert Quill formula embeds (handling arbitrarily nested KaTeX <span>s)
   processed = replaceQuillFormulas(processed).replace(/\uFEFF/g, '');
-
-  // Clean &nbsp; only inside LaTeX math delimiters so MathJax parses formulas cleanly while preserving blank spaces in text
-  processed = processed
-    .replace(/\\\([\s\S]*?\\\)/g, (m) => m.replace(/&nbsp;/g, ' '))
-    .replace(/\\\[[\s\S]*?\\\]/g, (m) => m.replace(/&nbsp;/g, ' '))
-    .replace(/\$\$[\s\S]*?\$\$/g, (m) => m.replace(/&nbsp;/g, ' '));
 
   // Convert isolated single &nbsp; between words (from Quill 2 getSemanticHTML) back to normal spaces
   // so text-align: justify and word wrapping work properly, while preserving all multi-space runs (&nbsp;&nbsp;, " &nbsp;") and empty lines (<p>&nbsp;</p>)
@@ -153,83 +166,28 @@ export function preprocessMathHtml(html: string | undefined | null): string {
   processed = processed
     .replace(/<p(\s[^>]*)?>\s*(?:<br\s*\/?>)?\s*<\/p>/gi, '<p$1>&nbsp;</p>');
 
+  // Synchronously render LaTeX delimiters to KaTeX HTML (skipping HTML tags)
+  // This avoids async MathJax DOM mutations and React re-render flicker/glitches.
+  processed = processed.replace(
+    /(<[^>]+>)|\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$|\\\(([\s\S]*?)\\\)|(?<!\\)\$(?!\s)([^$\n]+?)(?<!\s)\$/g,
+    (match, tag, dispBracket, dispDollar, inlineParen, inlineDollar) => {
+      if (tag) return tag;
+      if (dispBracket !== undefined) return renderLatexToKatex(dispBracket, true);
+      if (dispDollar !== undefined) return renderLatexToKatex(dispDollar, true);
+      if (inlineParen !== undefined) return renderLatexToKatex(inlineParen, false);
+      if (inlineDollar !== undefined) return renderLatexToKatex(inlineDollar, false);
+      return match;
+    }
+  );
+
   return processed;
 }
 
 export function initMathJax(): void {
-  if (typeof window === 'undefined') return;
-
-  if (!window.MathJax) {
-    window.MathJax = {
-      tex: {
-        inlineMath: [['\\(', '\\)'], ['$', '$']],
-        displayMath: [['$$', '$$'], ['\\[', '\\]']],
-        processEscapes: true,
-        processEnvironments: true,
-        macros: {
-          degree: '^\\circ',
-        },
-      },
-      svg: {
-        fontCache: 'local', // Embed glyph paths directly in each SVG so cloned containers render everywhere
-      },
-      options: {
-        ignoreHtmlClass: 'ql-editor',
-      },
-    };
-
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
-    script.async = true;
-    script.onload = () => {
-      void renderMath();
-    };
-    document.head.appendChild(script);
-  }
+  // No-op: math is rendered synchronously via bundled KaTeX in preprocessMathHtml.
 }
 
-export function renderMath(elements?: (HTMLElement | null)[]): Promise<void> {
-  if (typeof window === 'undefined') return Promise.resolve();
-
-  initMathJax();
-
-  return new Promise<void>((resolve) => {
-    let retries = 0;
-    const tryRender = () => {
-      if (!window.MathJax?.typesetPromise) {
-        if (retries < 40) {
-          retries++;
-          setTimeout(tryRender, 60);
-          return;
-        }
-        resolve();
-        return;
-      }
-
-      if (isRendering) {
-        pendingRender = true;
-        setTimeout(tryRender, 50);
-        return;
-      }
-
-      isRendering = true;
-      const target = elements && elements.length > 0 ? elements.filter(Boolean) : undefined;
-
-      window.MathJax.typesetPromise(target)
-        .catch((err: any) => {
-          console.warn('MathJax error:', err);
-        })
-        .finally(() => {
-          isRendering = false;
-          if (pendingRender) {
-            pendingRender = false;
-            void renderMath();
-          }
-          resolve();
-        });
-    };
-
-    tryRender();
-  });
+export function renderMath(_elements?: (HTMLElement | null)[]): Promise<void> {
+  return Promise.resolve();
 }
 

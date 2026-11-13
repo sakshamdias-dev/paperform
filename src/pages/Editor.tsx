@@ -474,7 +474,7 @@ const SortableQuestion = React.memo(function SortableQuestion({
             </div>
           </div>
           {sectionDescription && (
-            <div className="section-description-text" data-section-name={showSectionHeader} dangerouslySetInnerHTML={{ __html: sectionDescription }} />
+            <div className="section-description-text" data-section-name={showSectionHeader} dangerouslySetInnerHTML={{ __html: preprocessMathHtml(sectionDescription) }} />
           )}
         </div>
       )}
@@ -2080,9 +2080,10 @@ export default function Editor() {
         editorCanvas.scrollTop = 0;
       }
 
-      // 1. Typeset MathJax formulas first
-      await renderMath();
-      await new Promise(r => setTimeout(r, 120));
+      // 1. Wait for KaTeX/paper web fonts before rasterizing
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
 
       // 2. Ensure all images inside paper are completely loaded
       const imgElements = Array.from(paperElement.querySelectorAll('img'));
@@ -2518,7 +2519,7 @@ export default function Editor() {
       {(!paper.headerConfig?.visibleHeaderFields || paper.headerConfig.visibleHeaderFields.instructions !== false) && paper.instructions && (
         <div className="paper-instructions">
           <strong>Instructions:</strong>
-          <div className="paper-instructions-body" dangerouslySetInnerHTML={{ __html: paper.instructions }} />
+          <div className="paper-instructions-body" dangerouslySetInnerHTML={{ __html: preprocessMathHtml(paper.instructions) }} />
         </div>
       )}
     </div>
@@ -2595,7 +2596,7 @@ export default function Editor() {
             font-size: ${paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}px !important;
             line-height: var(--paper-line-height) !important;
           }
-          #printable-paper .clean-question * {
+          #printable-paper .clean-question *:not(.katex):not(.katex *) {
             line-height: inherit;
           }
           #printable-paper .q-text, #printable-paper .q-text p, #printable-paper .q-text div {
