@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { replaceQuillFormulas } from './utils/mathjax';
 import type {
   Course,
   Subject,
@@ -128,8 +129,7 @@ function saveLocalSharedQuestions(list: SharedQuestion[]) {
 
 function cleanTextForNotif(html: string): string {
   if (!html) return '';
-  return html
-    .replace(/<span[^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*data-value=["']([^"']*)["'][^>]*>[\s\S]*?<\/span>/gi, ' \\($1\\) ')
+  return replaceQuillFormulas(html)
     .replace(/<[^>]*>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')

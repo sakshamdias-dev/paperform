@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Keyboard, X } from 'lucide-react';
 import { MathfieldElement } from 'mathlive';
 
@@ -60,9 +61,9 @@ export default function MathLiveDialog({ open, initialLatex = '', onClose, onIns
     }
   }, [open, initialLatex]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
       className="modal-overlay math-dialog-overlay"
       style={{
@@ -171,6 +172,7 @@ export default function MathLiveDialog({ open, initialLatex = '', onClose, onIns
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

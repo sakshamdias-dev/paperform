@@ -1277,6 +1277,7 @@ export default function Editor() {
   }, [questions, paper, updateQuestion, updateQuestionPaper]);
 
   const openMathDialog = useCallback((onInsert: (latex: string) => void, initialLatex: string = '') => {
+    setEditingImage(null);
     mathDialogCallbackRef.current = onInsert;
     setInitialMathLatex(initialLatex || '');
     setShowMathDialog(true);
@@ -2875,7 +2876,7 @@ export default function Editor() {
         </div>
 
         {/* Inline image drag, alignment, resize & crop overlay (outside printable-paper so it works on paper & in modals without printing) */}
-        {editingImage && imageOverlayRect && (
+        {editingImage && imageOverlayRect && !showMathDialog && !showCropModal && (
           <div className="hide-on-print">
             {/* Draggable Selection Surface & Border Box */}
             <div

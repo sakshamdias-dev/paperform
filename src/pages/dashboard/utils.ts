@@ -1,4 +1,5 @@
 import type { QuestionPaper, QuestionType, Difficulty } from '../../types';
+import { replaceQuillFormulas } from '../../utils/mathjax';
 
 export function formatDate(dateStr?: string, opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }) {
   if (!dateStr) return '—';
@@ -95,13 +96,7 @@ export function subjectColor(key?: string) {
 
 export function stripHtml(html: string) {
   if (!html) return '';
-  const withLatex = html.replace(
-    /<span[^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*data-value=["']([^"']*)["'][^>]*>[\s\S]*?<\/span>/gi,
-    ' \\($1\\) '
-  ).replace(
-    /<span[^>]*data-value=["']([^"']*)["'][^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*>[\s\S]*?<\/span>/gi,
-    ' \\($1\\) '
-  );
+  const withLatex = replaceQuillFormulas(html);
   const tmp = document.createElement('div');
   tmp.innerHTML = withLatex;
   return (tmp.textContent || '').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();

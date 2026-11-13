@@ -50,32 +50,92 @@ export function latexToQuillFormula(html: string | undefined | null): string {
   return processed;
 }
 
+function decodeHtmlAttr(val: string): string {
+  return val
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&');
+}
+
+/**
+ * Replaces balanced `<span class="ql-formula" data-value="...">...</span>` elements
+ * (including any nested KaTeX `<span>` children) with `\( ... \)`.
+ */
+export function replaceQuillFormulas(html: string): string {
+  if (!html || !html.includes('ql-formula')) return html || '';
+
+  let result = '';
+  let cursor = 0;
+  const openSpanRegex = /<span\b([^>]*)>/gi;
+
+  while (cursor < html.length) {
+    openSpanRegex.lastIndex = cursor;
+    const match = openSpanRegex.exec(html);
+    if (!match) {
+      result += html.slice(cursor);
+      break;
+    }
+
+    const attrs = match[1] || '';
+    const isFormula = /\bclass\s*=\s*(?:"[^"]*\bql-formula\b[^"]*"|'[^']*\bql-formula\b[^']*')/i.test(attrs);
+    if (!isFormula) {
+      // Advance past this opening tag without consuming it as a formula
+      result += html.slice(cursor, match.index + match[0].length);
+      cursor = match.index + match[0].length;
+      continue;
+    }
+
+    const dataValMatch = attrs.match(/\bdata-value\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+    const rawLatex = dataValMatch ? (dataValMatch[1] ?? dataValMatch[2] ?? '') : '';
+    const cleanLatex = decodeHtmlAttr(rawLatex).trim();
+
+    // Walk forward to find the matching </span> for this <span class="ql-formula">
+    result += html.slice(cursor, match.index);
+    let scanPos = match.index + match[0].length;
+    let depth = 1;
+    const tagRegex = /<\/?span\b[^>]*>/gi;
+    tagRegex.lastIndex = scanPos;
+
+    let endPos = -1;
+    let tagMatch: RegExpExecArray | null;
+    while ((tagMatch = tagRegex.exec(html)) !== null) {
+      if (tagMatch[0].startsWith('</')) {
+        depth -= 1;
+        if (depth === 0) {
+          endPos = tagMatch.index + tagMatch[0].length;
+          break;
+        }
+      } else if (!tagMatch[0].endsWith('/>')) {
+        depth += 1;
+      }
+    }
+
+    if (endPos === -1) {
+      // Unclosed span fallback: replace just the opening tag
+      endPos = match.index + match[0].length;
+    }
+
+    result += cleanLatex ? `\\(${cleanLatex}\\)` : '';
+    cursor = endPos;
+  }
+
+  return result;
+}
+
 export function quillFormulaToLatex(html: string | undefined | null): string {
   if (!html) return '';
-  return html
-    .replace(
-      /<span[^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*data-value=["']([^"']*)["'][^>]*>[\s\S]*?<\/span>/gi,
-      (_match, val) => `\\(${String(val).replace(/&nbsp;/g, ' ').trim()}\\)`
-    )
-    .replace(
-      /<span[^>]*data-value=["']([^"']*)["'][^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*>[\s\S]*?<\/span>/gi,
-      (_match, val) => `\\(${String(val).replace(/&nbsp;/g, ' ').trim()}\\)`
-    );
+  return replaceQuillFormulas(html);
 }
 
 export function preprocessMathHtml(html: string | undefined | null): string {
   if (!html) return '';
   let processed = cleanImageHtml(html);
 
-  // Convert Quill formula embeds: <span class="ql-formula" data-value="...">...</span>
-  processed = processed.replace(
-    /<span[^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*data-value=["']([^"']*)["'][^>]*>[\s\S]*?<\/span>/gi,
-    (_match, val) => `\\(${String(val).replace(/&nbsp;/g, ' ')}\\)`
-  );
-  processed = processed.replace(
-    /<span[^>]*data-value=["']([^"']*)["'][^>]*class=["'][^"']*ql-formula[^"']*["'][^>]*>[\s\S]*?<\/span>/gi,
-    (_match, val) => `\\(${String(val).replace(/&nbsp;/g, ' ')}\\)`
-  );
+  // Convert Quill formula embeds (handling arbitrarily nested KaTeX <span>s)
+  processed = replaceQuillFormulas(processed).replace(/\uFEFF/g, '');
 
   // Clean &nbsp; only inside LaTeX math delimiters so MathJax parses formulas cleanly while preserving blank spaces in text
   processed = processed
