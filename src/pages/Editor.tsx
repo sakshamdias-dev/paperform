@@ -2596,6 +2596,9 @@ export default function Editor() {
             font-size: ${paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}px !important;
             line-height: var(--paper-line-height) !important;
           }
+          #printable-paper .katex {
+            font-size: ${paper.headerConfig?.equationFontSize ? `${paper.headerConfig.equationFontSize}px` : '1em'} !important;
+          }
           #printable-paper .clean-question *:not(.katex):not(.katex *) {
             line-height: inherit;
           }
@@ -3907,6 +3910,16 @@ export default function Editor() {
                 />
               </div>
               <div className="property-field">
+                <label className="property-label">Equation Font Size (px)</label>
+                <LazyNumberInput
+                  className="property-input"
+                  value={paper.headerConfig?.equationFontSize || paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}
+                  onChange={(val) => handleUpdateHeaderConfig({ equationFontSize: val })}
+                  min={8}
+                  fallback={paper.headerConfig?.bodyFontSize || paper.headerConfig?.fontSize || 14}
+                />
+              </div>
+              <div className="property-field">
                 <label className="property-label">School Name Size (px)</label>
                 <LazyNumberInput
                   className="property-input"
@@ -3951,7 +3964,7 @@ export default function Editor() {
                   fallback={13}
                 />
               </div>
-              <div className="property-field">
+              <div className="property-field" style={{ gridColumn: '1 / -1' }}>
                 <label className="property-label">Font Family</label>
                 <select
                   className="property-input"

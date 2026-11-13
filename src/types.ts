@@ -161,6 +161,7 @@ export interface HeaderConfig {
   instructionsFontSize?: number;
   sectionTitleFontSize?: number;
   bodyFontSize?: number;
+  equationFontSize?: number;
   fontFamily?: string;
   visibleHeaderFields?: VisibleHeaderFields;
   subQuestionNumberingStyle?: SubQuestionNumberingStyle;
