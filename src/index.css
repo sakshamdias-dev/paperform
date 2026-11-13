@@ -2364,7 +2364,8 @@ select.property-input option {
 /* Hide interactive controls in preview mode & print */
 .preview-active .question-card-actions,
 .preview-active .section-admin-actions,
-.preview-active .q-drag-handle {
+.preview-active .q-drag-handle,
+.preview-active .optional-badge {
   display: none !important;
 }
 
@@ -2372,7 +2373,8 @@ select.property-input option {
 
   .question-card-actions,
   .section-admin-actions,
-  .q-drag-handle {
+  .q-drag-handle,
+  .optional-badge {
     display: none !important;
   }
 }
